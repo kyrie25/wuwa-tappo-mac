@@ -59,6 +59,9 @@ jobs:
 
           - Apple Silicon; macOS 13 or later.
           - English interface and native prompts, including update feedback.
+          - Check for Updates discovers this fork’s releases, compares full Mac revisions and offers the matching regional download.
+          - Update dialog uses the app’s artwork, English font and cream/brown styling; installation uses a browser download and manual app replacement.
+          - Update flow and publishing requirements: https://github.com/kyrie25/wuwa-tappo-mac/blob/main/docs/MAC_UPDATES.md
           - Official 1.0.3 resources for both regions.
           - Configurable global shortcuts with Cmd/Option labels, capture and persistence.
           - Keyboard counting and mouse interactions without Input Monitoring or Accessibility permission.
