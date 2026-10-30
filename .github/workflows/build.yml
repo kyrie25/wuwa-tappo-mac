@@ -30,20 +30,20 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: '13.0'
       CARGO_INCREMENTAL: '0'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7.1.0
         with:
-          node-version: '24'
+          node-version-file: .node-version
           cache: npm
       - name: Read pinned official installer cache identity
         id: installer
         run: node scripts/installer-cache.mjs
       - name: Restore pinned official installer
         id: installer-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6.1.0
         with:
           path: ${{ steps.installer.outputs.path }}
           key: ${{ steps.installer.outputs.key }}
@@ -53,7 +53,7 @@ jobs:
           rustup toolchain install 1.97.1 --profile minimal
           rustup default 1.97.1
           brew install sevenzip
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v6.1.0
         id: cargo-cache
         with:
           path: |
@@ -67,7 +67,7 @@ jobs:
         run: npm run setup
       - name: Save verified official installer
         if: steps.prepare.outcome == 'success' && steps.installer-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6.1.0
         with:
           path: ${{ steps.installer.outputs.path }}
           key: ${{ steps.installer.outputs.key }}
@@ -84,13 +84,13 @@ jobs:
           npm run package 2>&1 | tee .work/package-macos.log
       - name: Keep packaging diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: macos-package-diagnostics-${{ matrix.region }}
           path: .work/package-macos.log
           if-no-files-found: ignore
           retention-days: 14
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: WuwaTappo-${{ matrix.artifact }}-Mac-arm64
           path: |
@@ -100,7 +100,7 @@ jobs:
           retention-days: 14
       - name: Save compiled Cargo dependencies
         if: always() && steps.native-tests.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6.1.0
         with:
           path: |
             ~/.cargo/registry

@@ -44,12 +44,11 @@ The official in-app update service currently distributes Windows installers. Upd
 
 ## Build from source
 
-Requires macOS, Xcode Command Line Tools, Node.js 24, [rustup](https://rustup.rs/) (the Rust version is pinned in `rust-toolchain.toml`) and 7-Zip.
+Requires macOS, Xcode Command Line Tools, Node.js 26.13.0 (pinned in `.node-version`), [rustup](https://rustup.rs/) (the Rust version is pinned in `rust-toolchain.toml`) and 7-Zip.
 
 ```bash
 xcode-select --install
-brew install node@24 sevenzip
-export PATH="$(brew --prefix node@24)/bin:$PATH"
+brew install node sevenzip
 git clone https://github.com/kyrie25/wuwa-tappo-mac.git
 cd wuwa-tappo-mac
 npm ci

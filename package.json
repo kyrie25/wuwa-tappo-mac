@@ -25,5 +25,8 @@
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4",
     "acorn": "^8.15.0"
+  },
+  "engines": {
+    "node": ">=26.13.0"
   }
 }
