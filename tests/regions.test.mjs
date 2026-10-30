@@ -19,9 +19,11 @@ test('CN retains its existing resource paths and application identity', () => {
 
 test('Global has separate inputs, prepared resources, icon output and application identity', () => {
   const cn = getRegionProfile('cn'), global = getRegionProfile('global');
-  for (const key of ['identifier', 'productName', 'frontendDir', 'preparedDir', 'iconsDir', 'upstreamLock', 'configUrl', 'assetsOrigin', 'artifactPrefix']) {
+  for (const key of ['identifier', 'frontendDir', 'preparedDir', 'iconsDir', 'upstreamLock', 'configUrl', 'assetsOrigin', 'artifactPrefix']) {
     assert.notEqual(cn[key], global[key], key);
   }
+  assert.equal(cn.productName, 'Wuwa Tappo');
+  assert.equal(global.productName, 'Wuwa Tappo');
   assert.deepEqual(tauriArguments('build', global, ['--', '--locked']), [
     'build', '--bundles', 'app', '--config', 'src-tauri/tauri.global.conf.json', '--', '--locked',
   ]);

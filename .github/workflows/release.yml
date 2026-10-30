@@ -59,6 +59,7 @@ jobs:
           Drag the app from the DMG into Applications, or extract the ZIP and move the app there. Packages include their regional interface and assets. Login and multiplayer require the corresponding official services.
 
           - Apple Silicon; macOS 13 or later.
+          - Both regional apps are named Wuwa Tappo; regional IDs and data stay separate. Install in separate folders to keep both. Remove the older regional-named app after upgrading.
           - English interface and native prompts, including update feedback.
           - Check for Updates discovers this fork’s releases, compares full Mac revisions and offers a signed regional update with Update and Restart.
           - Update dialog uses the app’s artwork, English font and cream/brown styling; automatic installation verifies signed bytes and the fork version, saves counters/session, then replaces and relaunches the app.

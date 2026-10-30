@@ -83,8 +83,8 @@ export function patchMacAbout(source, region = 'CN') {
   if (remotes.length !== 1) throw new Error('Original remote About content changed; reconcile the Mac build information before building.');
   const [remote, computed] = remotes[0];
   const info = region === 'GLOBAL'
-    ? `<h2 ${scope}>macOS community build</h2><p ${scope}>Wuwa Tappo Global Mac · Unofficial · Apple Silicon · macOS 13+</p>`
-    : `<h2 ${scope}>macOS community build</h2><p ${scope}>Wuwa Tappo CN Mac · Unofficial · Apple Silicon · macOS 13+</p>`;
+    ? `<h2 ${scope}>macOS community build</h2><p ${scope}>Wuwa Tappo · Global service · Unofficial · Apple Silicon · macOS 13+</p>`
+    : `<h2 ${scope}>macOS community build</h2><p ${scope}>Wuwa Tappo · CN service · Unofficial · Apple Silicon · macOS 13+</p>`;
   const banner = `<section class="about-section" ${scope}>${info}</section>`;
   return source
     .replace(original, `${info}<h3 ${scope}>Original Windows requirements</h3>`)

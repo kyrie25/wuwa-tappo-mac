@@ -13,10 +13,10 @@ Choose the `.dmg` for your account's region from [Releases](https://github.com/k
 
 | Service region | Application | Package prefix |
 | --- | --- | --- |
-| Mainland China | **Wuwa Tappo CN Mac.app** | `WuwaTappo-CN-Mac` |
-| Global | **Wuwa Tappo Global Mac.app** | `WuwaTappo-Global-Mac` |
+| Mainland China | **Wuwa Tappo.app** | `WuwaTappo-CN-Mac` |
+| Global | **Wuwa Tappo.app** | `WuwaTappo-Global-Mac` |
 
-Both apps can be installed together. Login data, settings, counters and Keychain entries are isolated; account data is not migrated between regions.
+Both apps are named **Wuwa Tappo**. To keep both installed, put them in separate folders (for example, `Applications/Wuwa CN/` and `Applications/Wuwa Global/`) so one does not replace the other. Login data, settings, counters and Keychain entries remain isolated by their unchanged regional bundle IDs; account data is not migrated between regions. When upgrading from the older regional app names, quit and remove the old app after installing the new one.
 
 - **Requirements:** Apple Silicon (M series), macOS 13 or later. No Intel build is currently provided.
 - **Included resources:** Each package includes its regional interface and embedded assets. No separate EXE download or extraction is needed. Login, asset updates and online features require internet access.

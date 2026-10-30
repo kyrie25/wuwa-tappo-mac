@@ -21,10 +21,7 @@ impl Region {
     }
 
     pub fn name(self) -> &'static str {
-        match self {
-            Self::Cn => "Wuwa Tappo CN Mac",
-            Self::Global => "Wuwa Tappo Global Mac",
-        }
+        "Wuwa Tappo"
     }
 
     pub fn api_host(self) -> &'static str {

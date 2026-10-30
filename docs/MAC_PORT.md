@@ -18,7 +18,7 @@ Repository, issue and Mac distribution links refer to this fork. Original licens
 
 `src-tauri/src/lib.rs` dispatches the recovered command contract to native modules. `windows.rs`, `system.rs` and `menu.rs` implement desktop windows, transparent pet positioning, monitor/safe-area calculations, click-through, native menus, launch-at-login and diagnostics using macOS/Tauri APIs.
 
-`profile.rs`, `scripts/regions.mjs` and the regional Tauri configurations select CN or Global explicitly. Bundle identifiers, local app data, session/keychain identities, deep-link registration and updater keys remain separate. Packages must match their region; mixed-region binaries/resources are rejected during packaging. Both apps can be installed together, although simultaneous use of identical global shortcuts can conflict.
+`profile.rs`, `scripts/regions.mjs` and the regional Tauri configurations select CN or Global explicitly. Bundle identifiers, local app data, session/keychain identities, deep-link registration and updater keys remain separate. Packages must match their region; mixed-region binaries/resources are rejected during packaging. Both apps display the name **Wuwa Tappo** and package `Wuwa Tappo.app`; regional bundle IDs and download prefixes stay unchanged, preserving existing data and update routing. Install both in separate folders to avoid a filename collision. A local build of the second region replaces the first region’s build-output bundle; CI builds each region separately. Simultaneous use of identical global shortcuts can conflict.
 
 ## Input and shortcuts
 

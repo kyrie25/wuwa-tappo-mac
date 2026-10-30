@@ -312,11 +312,11 @@ pub fn run() {
     let app = match app {
         Ok(app) => app,
         Err(error) => {
-            eprintln!("Could not start Wuwa Tappo Mac: {error}");
+            eprintln!("Could not start Wuwa Tappo: {error}");
             if let Some(mtm) = objc2::MainThreadMarker::new() {
                 let alert = objc2_app_kit::NSAlert::new(mtm);
                 alert.setMessageText(&objc2_foundation::NSString::from_str(
-                    "Wuwa Tappo Mac could not start",
+                    "Wuwa Tappo could not start",
                 ));
                 alert.setInformativeText(&objc2_foundation::NSString::from_str(&error.to_string()));
                 alert.runModal();

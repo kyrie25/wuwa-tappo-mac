@@ -21,7 +21,7 @@ test('packaging exposes explicit application and output paths', () => {
 test('packaging rejects incomplete arguments and missing application bundles', () => {
   const incomplete = spawnSync('bash', [script, '--app'], { encoding: 'utf8' });
   assert.equal(incomplete.status, 2);
-  const missing = spawnSync('bash', [script, '--app', '/nonexistent/Wuwa Tappo CN Mac.app'], { encoding: 'utf8' });
+  const missing = spawnSync('bash', [script, '--app', '/nonexistent/Wuwa Tappo.app'], { encoding: 'utf8' });
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /Complete app not found|must be generated on a Mac/);
 });

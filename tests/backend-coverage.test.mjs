@@ -74,7 +74,7 @@ test('remote About keeps English Mac information and falls back to bundled conte
     f: callback => callback(), k: () => true, v: () => html,
   });
   const result = evaluate('<h2>System Requirements</h2><p>Windows 10 / Windows 11 64-bit</p>');
-  assert.ok(result.includes('Wuwa Tappo Global Mac'));
+  assert.ok(result.includes('Wuwa Tappo · Global service'));
   assert.ok(result.includes('<h2>Original Windows requirements</h2>'));
   assert.equal(evaluate('<h2>系統配備</h2>'), '');
 });

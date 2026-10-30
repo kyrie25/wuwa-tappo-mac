@@ -43,7 +43,6 @@ await writeFile(path.join(output, 'index.html'), index.replace(/<html lang="[^"]
   .replace('</head>', `<style>:root{--mac-update-background:url('./assets/${updateBackgrounds[0]}')}.btn-check-update{white-space:nowrap}</style></head>`));
 const bootstrap = await readFile(path.join(root, 'scripts/bootstrap.html'), 'utf8');
 await writeFile(path.join(output, 'bootstrap.html'), bootstrap
-  .replace('<title>Wuwa Tappo CN Mac</title>', `<title>${profile.productName}</title>`)
-  .replace('<h1>Wuwa Tappo · CN</h1>', `<h1>Wuwa Tappo · ${profile.label}</h1>`));
+  .replace('<p id="region">CN service</p>', `<p id="region">${profile.label} service</p>`));
 for (const [name, content] of files) await writeFile(path.join(output, name), patchEnglishFrontend(content));
 console.log(`Prepared official ${profile.region} frontend at ${output}`);
