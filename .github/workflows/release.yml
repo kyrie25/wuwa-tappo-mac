@@ -59,12 +59,14 @@ jobs:
           - English interface and native prompts, including update feedback.
           - Official 1.0.3 resources for both regions.
           - Configurable global shortcuts with Cmd/Option labels, capture and persistence.
-          - Authorize Input Monitoring for keyboard and mouse counting.
+          - Keyboard counting and mouse interactions without Input Monitoring or Accessibility permission.
+          - Ordinary key presses count once; held-key repeats, modifier-only presses and media keys are excluded.
+          - Method and validation: https://github.com/kyrie25/wuwa-tappo-mac/blob/main/docs/PERMISSION_FREE_INPUT.md
           - Ad-hoc signed and not notarized by Apple. macOS may require Open Anyway in Privacy & Security.
           - No personal credentials, click history or account caches are included.
           - Community maintained and unofficial. Official assets retain their original ownership, and accounts, rewards and service rules are controlled by Kuro Games.
 
-          ZIP and DMG contain the same app for each region (four files in total). Publication requires passing tests, native builds and packaging for both regions. Real account login, system permissions and multiplayer still require hands-on verification.
+          ZIP and DMG contain the same app for each region (four files in total). Publication requires passing tests, native builds and packaging for both regions. Real account login and multiplayer still require hands-on verification.
           NOTES
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.zip dist/*.dmg --clobber

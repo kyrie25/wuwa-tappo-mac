@@ -198,7 +198,7 @@ fn context_items(
         )?,
         MenuItemKind::Predefined(PredefinedMenuItem::separator(app)?),
         checked(app, "toggle-game-mode", &labels.game_mode, options.game_mode)?,
-        normal(app, "input-access", "Enable Keyboard and Mouse Monitoring…")?,
+        normal(app, "input-access", "Restart Input Counting")?,
         normal(app, "open-logs", "Open Logs")?,
         MenuItemKind::Predefined(PredefinedMenuItem::separator(app)?),
         normal(app, "restart", &labels.restart)?,
@@ -250,7 +250,7 @@ fn application_menu(app: &AppHandle, options: &MenuOptions) -> tauri::Result<Men
     application.append(&MenuItem::with_id(
         app,
         "input-access",
-        "Enable Keyboard and Mouse Monitoring…",
+        "Restart Input Counting",
         true,
         None::<&str>,
     )?)?;

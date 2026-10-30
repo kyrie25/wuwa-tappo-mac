@@ -45,7 +45,7 @@
     });
     const bounds = document.querySelector('.pet-dock').getBoundingClientRect();
     result.petVisible = bounds.width > 0 && bounds.height > 0 && bounds.left >= 0 && bounds.top >= 0 && bounds.right <= innerWidth && bounds.bottom <= innerHeight;
-    result.passed = result.keychainWrite && result.keychainDelete && result.petVisible && result.shortcutsSaved && result.shortcutsRestored && result.shortcutDuplicateRejected;
+    result.passed = result.input.running && result.input.permissionRequired === false && result.keychainWrite && result.keychainDelete && result.petVisible && result.shortcutsSaved && result.shortcutsRestored && result.shortcutDuplicateRejected;
     window.__WUWATAPPO_RUNTIME_SMOKE__ = result;
     await invoke('write_app_log', { level: result.passed ? 'info' : 'error', message: `[MAC_SELFTEST] ${JSON.stringify(result)}` });
   };

@@ -714,10 +714,10 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
         let handle = app.clone();
         if let Err(error) = app.run_on_main_thread(move || {
             if let Err(error) = crate::input::request_input_access(handle) {
-                eprintln!("Input access request failed: {error}");
+                eprintln!("Input counting restart failed: {error}");
             }
         }) {
-            eprintln!("Could not schedule input access request: {error}");
+            eprintln!("Could not schedule input counting restart: {error}");
         }
     });
     std::thread::spawn({

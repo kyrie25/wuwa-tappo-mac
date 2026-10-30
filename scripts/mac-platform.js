@@ -60,7 +60,6 @@
   });
 
   const state = { nativeInput: false };
-  const productName = window.__WUWATAPPO_PROFILE__?.productName ?? 'Wuwa Tappo CN Mac';
   const isMainWindow = window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label === 'main';
   if (isMainWindow) {
     for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu']) {
@@ -81,7 +80,7 @@
     const update = status => {
       state.nativeInput = status?.running === true;
       if (!isMainWindow) return;
-      if (status?.granted === false || status?.running) attemptedRecovery = false;
+      if (status?.running) attemptedRecovery = false;
       let warning = document.getElementById('wuwatappo-input-status');
       if (status?.running) warning?.remove();
       else {
@@ -93,15 +92,13 @@
           (document.body || document.documentElement).append(warning);
         }
         warning.textContent = status?.error === 'input_status_unavailable'
-          ? 'Could not read input monitoring status. Try Enable Keyboard and Mouse Monitoring in the menu.'
-          : !status?.granted
-            ? `Input counting is paused. Allow ${productName} again in System Settings → Privacy & Security → Input Monitoring.`
-            : 'Input Monitoring permission is granted, but monitoring has not started. Try Enable Keyboard and Mouse Monitoring in the menu, or restart the app.';
+          ? 'Could not read input counting status. Try Restart Input Counting in the menu.'
+          : 'Input counting is paused. Try Restart Input Counting in the menu, or restart the app.';
       }
-      const signature = JSON.stringify([status?.granted ?? null, status?.running ?? null, status?.error ?? null]);
+      const signature = JSON.stringify([status?.running ?? null, status?.permissionRequired ?? null, status?.error ?? null]);
       if (signature !== previousStatus) {
         previousStatus = signature;
-        api.core.invoke('write_app_log', { level: 'info', message: `[INPUT] granted=${status?.granted ?? 'unknown'} running=${!!status?.running} error=${status?.error ?? 'none'}` })
+        api.core.invoke('write_app_log', { level: 'info', message: `[INPUT] running=${!!status?.running} permissionRequired=${status?.permissionRequired ?? 'unknown'} error=${status?.error ?? 'none'}` })
           .catch(() => console.error('[macOS] Could not write input status'));
       }
     };
@@ -111,12 +108,12 @@
       try {
         const status = await api.core.invoke('get_input_status');
         update(status);
-        if (isMainWindow && status.granted && !status.running && !attemptedRecovery) {
+        if (isMainWindow && !status.running && !attemptedRecovery) {
           attemptedRecovery = true;
           update(await api.core.invoke('resume_input_monitor'));
         }
       } catch {
-        update({ granted: null, running: false, error: 'input_status_unavailable' });
+        update({ permissionRequired: false, running: false, error: 'input_status_unavailable' });
       } finally { checking = false; }
     };
     try {

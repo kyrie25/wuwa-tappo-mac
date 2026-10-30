@@ -1,56 +1,27 @@
+use block2::RcBlock;
+use objc2::{rc::Retained, runtime::AnyObject, MainThreadMarker};
+use objc2_app_kit::{NSEvent, NSEventMask};
 use serde::Serialize;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    cell::RefCell,
+    collections::BTreeMap,
     ffi::c_void,
+    ptr::NonNull,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc, Arc, Mutex,
     },
     thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct InputStatus {
-    pub granted: bool,
     pub running: bool,
+    #[serde(rename = "permissionRequired")]
+    pub permission_required: bool,
     pub error: Option<String>,
-}
-
-fn input_status_snapshot(
-    granted: bool,
-    worker_running: bool,
-    tap_enabled: bool,
-    recorded_error: Option<String>,
-) -> InputStatus {
-    let running = granted && worker_running && tap_enabled;
-    let error = if !granted {
-        Some(
-            if worker_running {
-                "input_monitoring_permission_revoked"
-            } else {
-                "input_monitoring_permission_required"
-            }
-            .into(),
-        )
-    } else if running {
-        None
-    } else if worker_running && !tap_enabled {
-        Some("input_event_tap_disabled".into())
-    } else {
-        match recorded_error.as_deref() {
-            Some(
-                "input_monitoring_permission_required" | "input_monitoring_permission_revoked",
-            ) => Some("input_access_granted_waiting_for_resume".into()),
-            Some(_) => recorded_error,
-            None => Some("input_monitor_not_running".into()),
-        }
-    };
-    InputStatus {
-        granted,
-        running,
-        error,
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -77,8 +48,6 @@ struct MonitorState {
     stop: AtomicBool,
     scale: AtomicU64,
     window_listener_installed: AtomicBool,
-    run_loop: Mutex<usize>,
-    event_tap: Mutex<usize>,
     error: Mutex<Option<String>>,
     member_resolver: Mutex<Option<MemberResolver>>,
     auxiliary_hit_test: Mutex<Option<AuxiliaryHitTest>>,
@@ -92,33 +61,115 @@ impl MonitorState {
     }
 
     fn status(&self) -> InputStatus {
-        let granted = unsafe { CGPreflightListenEventAccess() };
-        let worker_running = self.running.load(Ordering::Acquire);
-        let mut recorded_error = match self.error.lock() {
-            Ok(error) => error.clone(),
-            Err(_) => Some("input_status_lock_poisoned".into()),
-        };
-        let tap_enabled = match self.event_tap.lock() {
-            Ok(tap) => *tap != 0 && unsafe { CGEventTapIsEnabled(*tap as *mut c_void) },
-            Err(_) => {
-                recorded_error = Some("input_event_tap_lock_poisoned".into());
-                false
-            }
-        };
-        input_status_snapshot(granted, worker_running, tap_enabled, recorded_error)
+        let running = self.running.load(Ordering::Acquire);
+        InputStatus {
+            running,
+            permission_required: false,
+            error: if running {
+                None
+            } else {
+                self.error
+                    .lock()
+                    .ok()
+                    .and_then(|error| error.clone())
+                    .or_else(|| Some("input_counter_not_running".into()))
+            },
+        }
     }
+}
 
-    fn wake_and_stop(&self) {
-        self.stop.store(true, Ordering::Release);
-        if let Ok(run_loop) = self.run_loop.lock() {
-            if *run_loop != 0 {
-                // The worker retains this run loop while its pointer is in the mutex.
-                unsafe {
-                    CFRunLoopStop(*run_loop as *mut c_void);
-                    CFRunLoopWakeUp(*run_loop as *mut c_void);
-                }
+thread_local! {
+    static MOUSE_MONITOR: RefCell<Option<MouseMonitor>> = const { RefCell::new(None) };
+}
+
+// AppKit owns the copied blocks; monitor tokens are removed on the main thread.
+struct MouseMonitor {
+    global: Retained<AnyObject>,
+    local: Option<Retained<AnyObject>>,
+}
+
+impl Drop for MouseMonitor {
+    fn drop(&mut self) {
+        unsafe {
+            NSEvent::removeMonitor(&self.global);
+            if let Some(local) = &self.local {
+                NSEvent::removeMonitor(local);
             }
         }
+    }
+}
+
+fn mouse_input(kind: u32, button: i64, point: Point) -> Option<NativeInput> {
+    match kind {
+        1 | 2 | 3 | 4 | 25 | 26 => {
+            let button = match kind {
+                1 | 2 => "left",
+                3 | 4 => "right",
+                _ if button == 2 => "middle",
+                _ => return None,
+            };
+            Some(NativeInput::Button {
+                point,
+                button,
+                pressed: matches!(kind, 1 | 3 | 25),
+            })
+        }
+        5 | 6 | 7 | 27 => Some(NativeInput::Move(point)),
+        _ => None,
+    }
+}
+
+fn observe_mouse(event: &NSEvent, sender: &mpsc::Sender<NativeInput>, state: &MonitorState) {
+    if state.stop.load(Ordering::Acquire) {
+        return;
+    }
+    let Some(cg_event) = event.CGEvent() else {
+        return;
+    };
+    let point = unsafe { CGEventGetLocation(Retained::as_ptr(&cg_event).cast_mut().cast()) };
+    if let Some(input) = mouse_input(event.r#type().0 as u32, event.buttonNumber() as i64, point) {
+        if sender.send(input).is_err() {
+            state.error("input_dispatch_disconnected".into());
+            state.stop.store(true, Ordering::Release);
+        }
+    }
+}
+
+impl MouseMonitor {
+    fn install(
+        sender: mpsc::Sender<NativeInput>,
+        state: Arc<MonitorState>,
+    ) -> Result<Self, String> {
+        let mask = NSEventMask::LeftMouseDown
+            | NSEventMask::LeftMouseUp
+            | NSEventMask::RightMouseDown
+            | NSEventMask::RightMouseUp
+            | NSEventMask::OtherMouseDown
+            | NSEventMask::OtherMouseUp
+            | NSEventMask::MouseMoved
+            | NSEventMask::LeftMouseDragged
+            | NSEventMask::RightMouseDragged
+            | NSEventMask::OtherMouseDragged;
+        let global_sender = sender.clone();
+        let global_state = state.clone();
+        let global = RcBlock::new(move |event: NonNull<NSEvent>| {
+            observe_mouse(unsafe { event.as_ref() }, &global_sender, &global_state);
+        });
+        let global = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(mask, &global)
+            .ok_or("input_global_mouse_monitor_failed")?;
+        let mut monitor = Self {
+            global,
+            local: None,
+        };
+        let local = RcBlock::new(move |event: NonNull<NSEvent>| {
+            observe_mouse(unsafe { event.as_ref() }, &sender, &state);
+            event.as_ptr()
+        });
+        monitor.local = Some(
+            unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &local) }
+                .ok_or("input_local_mouse_monitor_failed")?,
+        );
+        Ok(monitor)
     }
 }
 
@@ -141,8 +192,6 @@ impl InputMonitor {
                 stop: AtomicBool::new(false),
                 scale: AtomicU64::new(1.0f64.to_bits()),
                 window_listener_installed: AtomicBool::new(false),
-                run_loop: Mutex::new(0),
-                event_tap: Mutex::new(0),
                 error: Mutex::new(None),
                 member_resolver: Mutex::new(None),
                 auxiliary_hit_test: Mutex::new(None),
@@ -184,34 +233,36 @@ impl InputMonitor {
         if let Err(error) = &result {
             self.state.error(error.clone());
         }
-        let status = self.emit_status(&app)?;
+        let status = self.status();
+        app.emit("mac-input-status", &status)
+            .map_err(|error| format!("input_status_delivery_failed: {error}"))?;
         result.map(|_| status)
     }
 
-    fn start_inner(&self, app: AppHandle) -> Result<InputStatus, String> {
+    fn start_inner(&self, app: AppHandle) -> Result<(), String> {
+        MainThreadMarker::new().ok_or("Input counters must start on the main thread")?;
         let mut worker = self
             .worker
             .lock()
             .map_err(|_| "input_worker_lock_poisoned")?;
-        if self.status().running {
-            return Ok(self.status());
+        if self.state.running.load(Ordering::Acquire) {
+            return Ok(());
         }
+        self.state.stop.store(true, Ordering::Release);
         if let Some(previous) = worker.take() {
-            self.state.wake_and_stop();
             previous.join().map_err(|_| "input_worker_panicked")?;
         }
-        if !unsafe { CGPreflightListenEventAccess() } {
-            self.state
-                .error("input_monitoring_permission_required".into());
-            return Ok(self.status());
-        }
+        MOUSE_MONITOR.with(|slot| slot.borrow_mut().take());
         let window = app
             .get_webview_window("main")
             .ok_or("main_window_missing")?;
-        let scale = window
-            .scale_factor()
-            .map_err(|error| format!("input_window_scale_failed: {error}"))?;
-        self.state.scale.store(scale.to_bits(), Ordering::Release);
+        self.state.scale.store(
+            window
+                .scale_factor()
+                .map_err(|error| format!("input_window_scale_failed: {error}"))?
+                .to_bits(),
+            Ordering::Release,
+        );
         if !self
             .state
             .window_listener_installed
@@ -224,43 +275,42 @@ impl InputMonitor {
                 }
             });
         }
-        self.state.stop.store(false, Ordering::Release);
         *self
             .state
             .error
             .lock()
             .map_err(|_| "input_status_lock_poisoned")? = None;
+        self.state.stop.store(false, Ordering::Release);
+        let (sender, receiver) = mpsc::channel();
+        let mouse = MouseMonitor::install(sender, self.state.clone())?;
+        let baseline = keyboard_counter();
         let state = self.state.clone();
-        let worker_app = app.clone();
         let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
         *worker = Some(
             thread::Builder::new()
                 .name("wuwatappo-input".into())
                 .spawn(move || {
-                    run_monitor(worker_app, state, ready_sender);
+                    run_monitor(app, state, receiver, baseline, ready_sender);
                 })
                 .map_err(|error| format!("input_worker_spawn_failed: {error}"))?,
         );
-        let initialized = ready_receiver
+        MOUSE_MONITOR.with(|slot| *slot.borrow_mut() = Some(mouse));
+        ready_receiver
             .recv()
-            .map_err(|_| "input_worker_initialization_failed")?;
-        initialized.map(|()| self.status())
-    }
-
-    fn emit_status(&self, app: &AppHandle) -> Result<InputStatus, String> {
-        let status = self.status();
-        app.emit("mac-input-status", &status)
-            .map_err(|error| format!("input_status_delivery_failed: {error}"))?;
-        Ok(status)
+            .map_err(|_| "input_worker_initialization_failed".to_string())
     }
 
     pub fn stop(&self) -> Result<(), String> {
-        let mut worker = self
+        self.state.stop.store(true, Ordering::Release);
+        if MainThreadMarker::new().is_some() {
+            MOUSE_MONITOR.with(|slot| slot.borrow_mut().take());
+        }
+        if let Some(worker) = self
             .worker
             .lock()
-            .map_err(|_| "input_worker_lock_poisoned")?;
-        self.state.wake_and_stop();
-        if let Some(worker) = worker.take() {
+            .map_err(|_| "input_worker_lock_poisoned")?
+            .take()
+        {
             worker.join().map_err(|_| "input_worker_panicked")?;
         }
         Ok(())
@@ -276,8 +326,7 @@ impl Drop for InputMonitor {
 }
 
 pub fn start(app: AppHandle) -> Result<InputStatus, String> {
-    let monitor = app.state::<InputMonitor>();
-    monitor.start(app.clone())
+    app.state::<InputMonitor>().start(app.clone())
 }
 
 #[tauri::command]
@@ -287,27 +336,17 @@ pub fn get_input_status(app: AppHandle) -> InputStatus {
 
 #[tauri::command]
 pub fn resume_input_monitor(app: AppHandle) -> Result<InputStatus, String> {
-    // Recheck existing permission only; this path never requests access.
     start(app)
 }
 
 #[tauri::command]
 pub fn request_input_access(app: AppHandle) -> Result<InputStatus, String> {
-    // This is the only permission-requesting path, invoked by an explicit app action.
-    if !unsafe { CGPreflightListenEventAccess() } {
-        unsafe {
-            CGRequestListenEventAccess();
-        }
-    }
+    // Preserve the existing command; no system permission is requested.
     start(app)
 }
 
 #[derive(Debug)]
 enum NativeInput {
-    Key {
-        key: String,
-        pressed: bool,
-    },
     Move(Point),
     Button {
         point: Point,
@@ -323,249 +362,89 @@ struct Point {
     y: f64,
 }
 
-struct TapContext {
-    sender: mpsc::Sender<NativeInput>,
-    state: Arc<MonitorState>,
-    tap: *mut c_void,
-    pressed: BTreeSet<u16>,
+fn keyboard_counter() -> u32 {
+    // HID events only; Apple excludes autorepeat from this cumulative counter.
+    unsafe { CGEventSourceCounterForEventType(1, 10) }
 }
 
-impl TapContext {
-    fn send(&self, event: NativeInput) {
-        if self.sender.send(event).is_err() {
-            self.state.error("input_dispatch_disconnected".into());
-            self.state.wake_and_stop();
-        }
-    }
-
-    fn release_keys(&mut self) {
-        for code in std::mem::take(&mut self.pressed) {
-            self.send(NativeInput::Key {
-                key: key_label(code),
-                pressed: false,
-            });
-        }
+fn counter_delta(previous: u32, current: u32, elapsed: Duration) -> u32 {
+    let delta = current.wrapping_sub(previous);
+    // Reset after sleep/long suspension or a Window Server counter reset.
+    if elapsed > Duration::from_secs(2) || delta > 4096 {
+        0
+    } else {
+        delta
     }
 }
 
-unsafe extern "C" fn observe_event(
-    _proxy: *mut c_void,
-    event_type: u32,
-    event: *mut c_void,
-    context: *mut c_void,
-) -> *mut c_void {
-    let context = unsafe { &mut *(context as *mut TapContext) };
-    if event_type == 0xffff_fffe || event_type == 0xffff_ffff {
-        context.release_keys();
-        if unsafe { CGPreflightListenEventAccess() } {
-            unsafe {
-                CGEventTapEnable(context.tap, true);
-            }
-        } else {
-            context
-                .state
-                .error("input_monitoring_permission_revoked".into());
-            context.state.wake_and_stop();
-        }
-        return event;
+fn dispatch_mouse(
+    app: &AppHandle,
+    state: &MonitorState,
+    routing: &mut MouseRouting,
+    input: NativeInput,
+) -> Result<(), String> {
+    match route_event(input, routing, state)? {
+        Some(RoutedInput::Move(position)) => app.emit("mouse-move", position),
+        Some(RoutedInput::Button { position, button }) => app
+            .emit("mouse-move", position)
+            .and_then(|_| app.emit("mouse-button", button)),
+        None => return Ok(()),
     }
-    if event.is_null() || context.state.stop.load(Ordering::Acquire) {
-        return event;
-    }
-    match event_type {
-        10 | 11 | 12 => {
-            let code = unsafe { CGEventGetIntegerValueField(event, 9) } as u16;
-            if event_type == 12 && code == 57 {
-                // Caps Lock sends a flag transition, not a normal down/up pair.
-                context.send(NativeInput::Key {
-                    key: key_label(code),
-                    pressed: true,
-                });
-                context.send(NativeInput::Key {
-                    key: key_label(code),
-                    pressed: false,
-                });
-                return event;
-            }
-            let pressed = if event_type == 12 {
-                unsafe { CGEventSourceKeyState(0, code) }
-            } else {
-                event_type == 10
-            };
-            if pressed {
-                if context.pressed.insert(code) {
-                    context.send(NativeInput::Key {
-                        key: key_label(code),
-                        pressed: true,
-                    });
-                }
-            } else if context.pressed.remove(&code) {
-                context.send(NativeInput::Key {
-                    key: key_label(code),
-                    pressed: false,
-                });
-            }
-        }
-        1 | 2 | 3 | 4 | 25 | 26 => {
-            let button = match event_type {
-                1 | 2 => "left",
-                3 | 4 => "right",
-                _ => "middle",
-            };
-            // OtherMouse events can also represent extra side buttons; preserve only the supported middle button.
-            if matches!(event_type, 25 | 26)
-                && unsafe { CGEventGetIntegerValueField(event, 3) } != 2
-            {
-                return event;
-            }
-            context.send(NativeInput::Button {
-                point: unsafe { CGEventGetLocation(event) },
-                button,
-                pressed: matches!(event_type, 1 | 3 | 25),
-            });
-        }
-        5 | 6 | 7 | 27 => context.send(NativeInput::Move(unsafe { CGEventGetLocation(event) })),
-        _ => {}
-    }
-    event
+    .map_err(|error| format!("input_event_delivery_failed: {error}"))
 }
 
 fn run_monitor(
     app: AppHandle,
     state: Arc<MonitorState>,
-    ready: mpsc::SyncSender<Result<(), String>>,
+    receiver: mpsc::Receiver<NativeInput>,
+    mut previous: u32,
+    ready: mpsc::SyncSender<()>,
 ) {
-    let (sender, receiver) = mpsc::channel();
-    let mut context = Box::new(TapContext {
-        sender,
-        state: state.clone(),
-        tap: std::ptr::null_mut(),
-        pressed: BTreeSet::new(),
-    });
-    let mask = [1u32, 2, 3, 4, 5, 6, 7, 10, 11, 12, 25, 26, 27]
-        .into_iter()
-        .fold(0u64, |mask, event| mask | (1u64 << event));
-    let tap = unsafe {
-        CGEventTapCreate(
-            1,
-            0,
-            1,
-            mask,
-            observe_event,
-            (&mut *context as *mut TapContext).cast(),
-        )
-    };
-    if tap.is_null() {
-        let error = "input_event_tap_create_failed".to_owned();
-        state.error(error.clone());
-        let _ = ready.send(Err(error));
-        return;
-    }
-    context.tap = tap;
-    let source = unsafe { CFMachPortCreateRunLoopSource(std::ptr::null_mut(), tap, 0) };
-    if source.is_null() {
-        unsafe {
-            CFMachPortInvalidate(tap);
-            CFRelease(tap);
-        }
-        let error = "input_run_loop_source_create_failed".to_owned();
-        state.error(error.clone());
-        let _ = ready.send(Err(error));
-        return;
-    }
-    let dispatch_state = state.clone();
-    let dispatch_app = app.clone();
-    let dispatch = match thread::Builder::new()
-        .name("wuwatappo-input-events".into())
-        .spawn(move || dispatch_events(dispatch_app, dispatch_state, receiver))
-    {
-        Ok(thread) => thread,
-        Err(error) => {
-            unsafe {
-                CFMachPortInvalidate(tap);
-                CFRelease(source);
-                CFRelease(tap);
-            }
-            let error = format!("input_dispatch_spawn_failed: {error}");
-            state.error(error.clone());
-            let _ = ready.send(Err(error));
-            return;
-        }
-    };
-    let run_loop = unsafe { CFRunLoopGetCurrent() };
-    unsafe {
-        CFRetain(run_loop);
-        CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes);
-        CGEventTapEnable(tap, true);
-    }
-    let initialization = (|| -> Result<(), String> {
-        *state
-            .run_loop
-            .lock()
-            .map_err(|_| "input_run_loop_lock_poisoned")? = run_loop as usize;
-        *state
-            .event_tap
-            .lock()
-            .map_err(|_| "input_event_tap_lock_poisoned")? = tap as usize;
-        if !unsafe { CGEventTapIsEnabled(tap) } {
-            return Err("input_event_tap_enable_failed".into());
-        }
-        state.running.store(true, Ordering::Release);
-        Ok(())
-    })();
-    if let Err(error) = &initialization {
-        state.error(error.clone());
+    let mut routing = MouseRouting::default();
+    let mut sampled = Instant::now();
+    let interval = Duration::from_millis(50);
+    state.running.store(true, Ordering::Release);
+    if ready.send(()).is_err() {
         state.stop.store(true, Ordering::Release);
     }
-    if ready.send(initialization).is_err() {
-        state.stop.store(true, Ordering::Release);
-    }
-    // Bounded native run-loop iterations also observe a stop that races entry.
     while !state.stop.load(Ordering::Acquire) {
-        unsafe {
-            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.25, 0);
+        let result = match receiver.recv_timeout(interval.saturating_sub(sampled.elapsed())) {
+            Ok(input) => dispatch_mouse(&app, &state, &mut routing, input),
+            Err(mpsc::RecvTimeoutError::Timeout) => Ok(()),
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+        if let Err(error) = result {
+            state.error(error);
+            break;
+        }
+        let elapsed = sampled.elapsed();
+        if elapsed >= interval {
+            let current = keyboard_counter();
+            let delta = counter_delta(previous, current, elapsed);
+            previous = current;
+            sampled = Instant::now();
+            // This existing clap-only consumer preserves official count storage,
+            // reporting gates and pet feedback without inventing key identities.
+            for _ in 0..delta {
+                if let Err(error) = app.emit("global-clap-mouse", ()) {
+                    state.error(format!("input_count_delivery_failed: {error}"));
+                    state.stop.store(true, Ordering::Release);
+                    break;
+                }
+            }
         }
     }
-    context.release_keys();
     state.running.store(false, Ordering::Release);
-    let status = state.status();
-    if let Err(error) = app.emit("mac-input-status", status) {
+    if let Err(error) = app.emit("mac-input-status", state.status()) {
         state.error(format!("input_status_delivery_failed: {error}"));
-    }
-    unsafe {
-        CGEventTapEnable(tap, false);
-        CFRunLoopRemoveSource(run_loop, source, kCFRunLoopCommonModes);
-        CFMachPortInvalidate(tap);
-        CFRelease(source);
-    }
-    {
-        // A status read holds this mutex while querying the native tap, so it
-        // cannot race destruction of the CFMachPort.
-        let mut stored = match state.event_tap.lock() {
-            Ok(stored) => stored,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        *stored = 0;
-        unsafe {
-            CFRelease(tap);
-        }
-    }
-    {
-        let mut stored = match state.run_loop.lock() {
-            Ok(stored) => stored,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        *stored = 0;
-        unsafe {
-            CFRelease(run_loop);
-        }
-    }
-    drop(context);
-    if dispatch.join().is_err() {
-        state.error("input_dispatch_panicked".into());
     }
 }
 
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGEventSourceCounterForEventType(state: i32, event_type: u32) -> u32;
+    fn CGEventGetLocation(event: *mut c_void) -> Point;
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MouseTarget {
     Main,
@@ -605,10 +484,6 @@ impl MouseRouting {
 
 #[derive(Debug)]
 enum RoutedInput {
-    Key {
-        key: String,
-        pressed: bool,
-    },
     Move(MousePosition),
     Button {
         position: MousePosition,
@@ -622,7 +497,6 @@ fn route_event(
     state: &MonitorState,
 ) -> Result<Option<RoutedInput>, String> {
     match event {
-        NativeInput::Key { key, pressed } => Ok(Some(RoutedInput::Key { key, pressed })),
         NativeInput::Move(point) => {
             let point = physical_mouse_point(point, state);
             let over_auxiliary = over_auxiliary_window(point, state)?;
@@ -663,41 +537,6 @@ fn route_event(
     }
 }
 
-fn dispatch_events(
-    app: AppHandle,
-    state: Arc<MonitorState>,
-    receiver: mpsc::Receiver<NativeInput>,
-) {
-    let mut routing = MouseRouting::default();
-    for event in receiver {
-        let event = match route_event(event, &mut routing, &state) {
-            Ok(Some(event)) => event,
-            Ok(None) => continue,
-            Err(error) => {
-                state.error(format!("input_event_route_failed: {error}"));
-                state.wake_and_stop();
-                break;
-            }
-        };
-        let result = match event {
-            RoutedInput::Key { key, pressed } => {
-                app.emit(if pressed { "key-press" } else { "key-release" }, key)
-            }
-            RoutedInput::Move(position) => app.emit("mouse-move", position),
-            RoutedInput::Button { position, button } => {
-                // Keep global cursor state current before the main-owned button event.
-                app.emit("mouse-move", position)
-                    .and_then(|_| app.emit("mouse-button", button))
-            }
-        };
-        if let Err(error) = result {
-            state.error(format!("input_event_delivery_failed: {error}"));
-            state.wake_and_stop();
-            break;
-        }
-    }
-}
-
 fn physical_mouse_point(point: Point, state: &MonitorState) -> Point {
     let scale = f64::from_bits(state.scale.load(Ordering::Acquire));
     let (x, y) = target_window_physical_point(point.x, point.y, scale);
@@ -733,289 +572,50 @@ fn target_window_physical_point(x: f64, y: f64, scale: f64) -> (f64, f64) {
     (x * scale, y * scale)
 }
 
-fn key_label(code: u16) -> String {
-    match code {
-        0 => "a",
-        1 => "s",
-        2 => "d",
-        3 => "f",
-        4 => "h",
-        5 => "g",
-        6 => "z",
-        7 => "x",
-        8 => "c",
-        9 => "v",
-        10 => "§",
-        11 => "b",
-        12 => "q",
-        13 => "w",
-        14 => "e",
-        15 => "r",
-        16 => "y",
-        17 => "t",
-        18 => "1",
-        19 => "2",
-        20 => "3",
-        21 => "4",
-        22 => "6",
-        23 => "5",
-        24 => "=",
-        25 => "9",
-        26 => "7",
-        27 => "-",
-        28 => "8",
-        29 => "0",
-        30 => "]",
-        31 => "o",
-        32 => "u",
-        33 => "[",
-        34 => "i",
-        35 => "p",
-        36 => "Enter",
-        37 => "l",
-        38 => "j",
-        39 => "'",
-        40 => "k",
-        41 => ";",
-        42 => "\\",
-        43 => ",",
-        44 => "/",
-        45 => "n",
-        46 => "m",
-        47 => ".",
-        48 => "Tab",
-        49 => " ",
-        50 => "`",
-        51 => "Backspace",
-        53 => "Escape",
-        54 => "MetaRight",
-        55 => "MetaLeft",
-        56 => "ShiftLeft",
-        57 => "CapsLock",
-        58 => "AltLeft",
-        59 => "ControlLeft",
-        60 => "ShiftRight",
-        61 => "AltRight",
-        62 => "ControlRight",
-        63 => "Fn",
-        64 => "F17",
-        65 => "NumpadDecimal",
-        67 => "NumpadMultiply",
-        69 => "NumpadAdd",
-        71 => "NumLock",
-        72 => "AudioVolumeUp",
-        73 => "AudioVolumeDown",
-        74 => "AudioVolumeMute",
-        75 => "NumpadDivide",
-        76 => "NumpadEnter",
-        78 => "NumpadSubtract",
-        79 => "F18",
-        80 => "F19",
-        81 => "NumpadEqual",
-        82 => "Numpad0",
-        83 => "Numpad1",
-        84 => "Numpad2",
-        85 => "Numpad3",
-        86 => "Numpad4",
-        87 => "Numpad5",
-        88 => "Numpad6",
-        89 => "Numpad7",
-        90 => "F20",
-        91 => "Numpad8",
-        92 => "Numpad9",
-        93 => "¥",
-        94 => "_",
-        95 => "NumpadComma",
-        96 => "F5",
-        97 => "F6",
-        98 => "F7",
-        99 => "F3",
-        100 => "F8",
-        101 => "F9",
-        102 => "Eisu",
-        103 => "F11",
-        104 => "Kana",
-        105 => "F13",
-        106 => "F16",
-        107 => "F14",
-        109 => "F10",
-        111 => "F12",
-        113 => "F15",
-        114 => "Help",
-        115 => "Home",
-        116 => "PageUp",
-        117 => "Delete",
-        118 => "F4",
-        119 => "End",
-        120 => "F2",
-        121 => "PageDown",
-        122 => "F1",
-        123 => "ArrowLeft",
-        124 => "ArrowRight",
-        125 => "ArrowDown",
-        126 => "ArrowUp",
-        _ => return format!("Key{code}"),
-    }
-    .to_owned()
-}
-
-#[link(name = "CoreGraphics", kind = "framework")]
-unsafe extern "C" {
-    fn CGPreflightListenEventAccess() -> bool;
-    fn CGRequestListenEventAccess() -> bool;
-    fn CGEventTapCreate(
-        location: u32,
-        placement: u32,
-        options: u32,
-        mask: u64,
-        callback: unsafe extern "C" fn(*mut c_void, u32, *mut c_void, *mut c_void) -> *mut c_void,
-        user_info: *mut c_void,
-    ) -> *mut c_void;
-    fn CGEventTapEnable(tap: *mut c_void, enabled: bool);
-    fn CGEventTapIsEnabled(tap: *mut c_void) -> bool;
-    fn CGEventGetIntegerValueField(event: *mut c_void, field: u32) -> i64;
-    fn CGEventGetLocation(event: *mut c_void) -> Point;
-    fn CGEventSourceKeyState(state: i32, key: u16) -> bool;
-    #[cfg(test)]
-    fn CGEventCreateKeyboardEvent(source: *mut c_void, key: u16, down: bool) -> *mut c_void;
-    #[cfg(test)]
-    fn CGEventCreateMouseEvent(
-        source: *mut c_void,
-        event_type: u32,
-        point: Point,
-        button: u32,
-    ) -> *mut c_void;
-}
-
-#[link(name = "CoreFoundation", kind = "framework")]
-unsafe extern "C" {
-    static kCFRunLoopCommonModes: *mut c_void;
-    static kCFRunLoopDefaultMode: *mut c_void;
-    fn CFRetain(object: *mut c_void) -> *mut c_void;
-    fn CFRelease(object: *mut c_void);
-    fn CFMachPortCreateRunLoopSource(
-        allocator: *mut c_void,
-        tap: *mut c_void,
-        order: isize,
-    ) -> *mut c_void;
-    fn CFMachPortInvalidate(tap: *mut c_void);
-    fn CFRunLoopGetCurrent() -> *mut c_void;
-    fn CFRunLoopAddSource(run_loop: *mut c_void, source: *mut c_void, mode: *mut c_void);
-    fn CFRunLoopRemoveSource(run_loop: *mut c_void, source: *mut c_void, mode: *mut c_void);
-    fn CFRunLoopRunInMode(mode: *mut c_void, seconds: f64, return_after_source_handled: u8) -> i32;
-    fn CFRunLoopStop(run_loop: *mut c_void);
-    fn CFRunLoopWakeUp(run_loop: *mut c_void);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct TestEvent(*mut c_void);
-    impl Drop for TestEvent {
-        fn drop(&mut self) {
-            unsafe {
-                CFRelease(self.0);
-            }
-        }
+    fn auxiliary_test_state() -> Arc<MonitorState> {
+        let state = InputMonitor::new().state.clone();
+        *state.auxiliary_hit_test.lock().unwrap() = Some(Arc::new(|x, _| x >= 100.0 && x < 200.0));
+        *state.member_resolver.lock().unwrap() = Some(Arc::new(|_, _| Some(7)));
+        state
     }
 
-    fn test_context() -> (TapContext, mpsc::Receiver<NativeInput>) {
-        let state = Arc::new(MonitorState {
-            running: AtomicBool::new(false),
-            stop: AtomicBool::new(false),
-            scale: AtomicU64::new(1.0f64.to_bits()),
-            window_listener_installed: AtomicBool::new(false),
-            run_loop: Mutex::new(0),
-            event_tap: Mutex::new(0),
-            error: Mutex::new(None),
-            member_resolver: Mutex::new(None),
-            auxiliary_hit_test: Mutex::new(None),
-        });
-        let (sender, receiver) = mpsc::channel();
-        (
-            TapContext {
-                sender,
-                state,
-                tap: std::ptr::null_mut(),
-                pressed: BTreeSet::new(),
-            },
-            receiver,
-        )
+    #[test]
+    fn cumulative_counters_preserve_bursts_without_replaying_baselines() {
+        let sample = Duration::from_millis(50);
+        assert_eq!(counter_delta(100, 103, sample), 3);
+        assert_eq!(counter_delta(103, 103, sample), 0);
+        assert_eq!(counter_delta(u32::MAX - 2, 1, sample), 4);
+        assert_eq!(counter_delta(103, 0, sample), 0);
+        assert_eq!(counter_delta(103, 110, Duration::from_secs(3)), 0);
     }
 
-    fn send_test_event(context: &mut TapContext, kind: u32, event: &TestEvent) {
-        unsafe {
-            observe_event(
-                std::ptr::null_mut(),
-                kind,
-                event.0,
-                (context as *mut TapContext).cast(),
+    #[test]
+    fn counting_does_not_require_a_permission_or_claim_one_is_granted() {
+        let monitor = InputMonitor::new();
+        let status = serde_json::to_value(monitor.status()).unwrap();
+        assert_eq!(status["permissionRequired"], false);
+        assert!(status.get("granted").is_none());
+        monitor.state.running.store(true, Ordering::Release);
+        assert!(monitor.status().running);
+        assert_eq!(monitor.status().error, None);
+    }
+
+    #[test]
+    fn mouse_callbacks_count_supported_buttons_once_and_ignore_scroll_and_extra_buttons() {
+        let point = Point { x: 20., y: 30. };
+        for (kind, button) in [(1, "left"), (3, "right"), (25, "middle")] {
+            assert!(
+                matches!(mouse_input(kind, 2, point), Some(NativeInput::Button { button: observed, pressed: true, .. }) if observed == button)
+            );
+            assert!(
+                matches!(mouse_input(kind + 1, 2, point), Some(NativeInput::Button { button: observed, pressed: false, .. }) if observed == button)
             );
         }
-    }
-
-    #[test]
-    fn native_keyboard_repeat_produces_one_press_release_pair() {
-        let (mut context, receiver) = test_context();
-        let down = TestEvent(unsafe { CGEventCreateKeyboardEvent(std::ptr::null_mut(), 49, true) });
-        let up = TestEvent(unsafe { CGEventCreateKeyboardEvent(std::ptr::null_mut(), 49, false) });
-        assert!(!down.0.is_null() && !up.0.is_null());
-        send_test_event(&mut context, 10, &down);
-        send_test_event(&mut context, 10, &down);
-        send_test_event(&mut context, 11, &up);
-        let events: Vec<_> = receiver.try_iter().collect();
-        assert_eq!(events.len(), 2);
-        assert!(matches!(&events[0], NativeInput::Key { key, pressed: true } if key == " "));
-        assert!(matches!(&events[1], NativeInput::Key { key, pressed: false } if key == " "));
-    }
-
-    #[test]
-    fn native_mouse_has_no_keyboard_or_clap_duplicate() {
-        let (mut context, receiver) = test_context();
-        let point = Point { x: -20.0, y: 30.0 };
-        let down = TestEvent(unsafe { CGEventCreateMouseEvent(std::ptr::null_mut(), 1, point, 0) });
-        let up = TestEvent(unsafe { CGEventCreateMouseEvent(std::ptr::null_mut(), 2, point, 0) });
-        assert!(!down.0.is_null() && !up.0.is_null());
-        send_test_event(&mut context, 1, &down);
-        send_test_event(&mut context, 2, &up);
-        let events: Vec<_> = receiver.try_iter().collect();
-        assert_eq!(events.len(), 2);
-        assert!(
-            matches!(&events[0], NativeInput::Button { button: "left", pressed: true, point } if point.x == -20.0 && point.y == 30.0)
-        );
-        assert!(matches!(
-            &events[1],
-            NativeInput::Button {
-                button: "left",
-                pressed: false,
-                ..
-            }
-        ));
-    }
-
-    #[test]
-    fn native_stream_shutdown_releases_held_keys() {
-        let (mut context, receiver) = test_context();
-        let down =
-            TestEvent(unsafe { CGEventCreateKeyboardEvent(std::ptr::null_mut(), 100, true) });
-        assert!(!down.0.is_null());
-        send_test_event(&mut context, 10, &down);
-        context.release_keys();
-        assert!(context.pressed.is_empty());
-        let events: Vec<_> = receiver.try_iter().collect();
-        assert_eq!(events.len(), 2);
-        assert!(matches!(&events[1], NativeInput::Key { key, pressed: false } if key == "F8"));
-    }
-
-    #[test]
-    fn hotkeys_and_space_keep_original_payload_contract() {
-        assert_eq!(key_label(49), " ");
-        assert_eq!(key_label(100), "F8");
-        assert_eq!(key_label(101), "F9");
-        assert_eq!(key_label(118), "F4");
-        assert_eq!(key_label(96), "F5");
-        assert_ne!(key_label(56), key_label(60));
+        assert!(mouse_input(25, 3, point).is_none());
+        assert!(mouse_input(22, 0, point).is_none());
     }
 
     fn route_button(
@@ -1035,14 +635,6 @@ mod tests {
             state,
         )
         .unwrap()
-    }
-
-    fn auxiliary_test_state() -> Arc<MonitorState> {
-        let (context, _) = test_context();
-        let state = context.state;
-        *state.auxiliary_hit_test.lock().unwrap() = Some(Arc::new(|x, _| x >= 100.0 && x < 200.0));
-        *state.member_resolver.lock().unwrap() = Some(Arc::new(|_, _| Some(7)));
-        state
     }
 
     #[test]
@@ -1160,17 +752,11 @@ mod tests {
     }
 
     #[test]
-    fn auxiliary_filter_receives_main_physical_coordinates_and_preserves_keyboard_stream() {
+    fn auxiliary_filter_receives_main_physical_coordinates() {
         let state = auxiliary_test_state();
         state.scale.store(2.0f64.to_bits(), Ordering::Release);
         let mut routing = MouseRouting::default();
         assert!(route_button(&mut routing, &state, 75.0, "left", true).is_none());
-        assert!(
-            matches!(route_event(NativeInput::Key { key: "a".into(), pressed: true }, &mut routing, &state).unwrap(), Some(RoutedInput::Key { key, pressed: true }) if key == "a")
-        );
-        assert!(
-            matches!(route_event(NativeInput::Key { key: "a".into(), pressed: false }, &mut routing, &state).unwrap(), Some(RoutedInput::Key { key, pressed: false }) if key == "a")
-        );
         assert!(route_button(&mut routing, &state, 25.0, "left", false).is_none());
     }
 
@@ -1240,83 +826,5 @@ mod tests {
             button,
             serde_json::json!({"button":"left","action":"press"})
         );
-    }
-
-    #[test]
-    fn granted_permission_without_an_enabled_tap_is_not_running() {
-        let status = input_status_snapshot(true, true, false, None);
-        assert!(status.granted);
-        assert!(!status.running);
-        assert_eq!(status.error.as_deref(), Some("input_event_tap_disabled"));
-    }
-
-    #[test]
-    fn revoked_permission_stops_reported_activity_even_if_worker_is_alive() {
-        let status = input_status_snapshot(false, true, true, None);
-        assert!(!status.granted);
-        assert!(!status.running);
-        assert_eq!(
-            status.error.as_deref(),
-            Some("input_monitoring_permission_revoked")
-        );
-    }
-
-    #[test]
-    fn newly_granted_permission_reports_pending_resume_not_missing_permission() {
-        let status = input_status_snapshot(
-            true,
-            false,
-            false,
-            Some("input_monitoring_permission_required".into()),
-        );
-        assert!(status.granted);
-        assert!(!status.running);
-        assert_eq!(
-            status.error.as_deref(),
-            Some("input_access_granted_waiting_for_resume")
-        );
-    }
-
-    #[test]
-    fn enabled_monitor_clears_stale_permission_failure_from_its_status() {
-        let status = input_status_snapshot(
-            true,
-            true,
-            true,
-            Some("input_monitoring_permission_required".into()),
-        );
-        assert_eq!(
-            status,
-            InputStatus {
-                granted: true,
-                running: true,
-                error: None
-            }
-        );
-    }
-
-    #[test]
-    fn failed_monitor_start_keeps_the_actual_failure_visible() {
-        let status = input_status_snapshot(
-            true,
-            false,
-            false,
-            Some("input_event_tap_enable_failed".into()),
-        );
-        assert!(!status.running);
-        assert_eq!(
-            status.error.as_deref(),
-            Some("input_event_tap_enable_failed")
-        );
-    }
-
-    #[test]
-    fn status_serializes_permission_failure_without_changing_other_capabilities() {
-        let status = InputStatus {
-            granted: false,
-            running: false,
-            error: Some("input_monitoring_permission_required".into()),
-        };
-        assert_eq!(serde_json::to_value(status).unwrap()["granted"], false);
     }
 }

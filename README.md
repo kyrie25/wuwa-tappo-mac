@@ -21,16 +21,16 @@ Both apps can be installed together. Login data, settings, counters and Keychain
 - **Requirements:** Apple Silicon (M series), macOS 13 or later. No Intel build is currently provided.
 - **Included resources:** Each package includes its regional interface and embedded assets. No separate EXE download or extraction is needed. Login, asset updates and online features require internet access.
 - **First launch:** These builds are not notarized by Apple. If macOS blocks the app, verify its source, then use System Settings → Privacy & Security → Open Anyway.
-- **Input Monitoring:** Add and enable the app in System Settings → Privacy & Security → Input Monitoring. Authorize each regional app separately, then quit and reopen it as prompted to enable global keyboard and mouse counting.
+- **Input counting:** Ordinary key presses and supported mouse clicks work without Input Monitoring or Accessibility permission. Held-key autorepeat, modifier-only presses and media keys do not add keyboard counts. See [how permission-free input works](docs/PERMISSION_FREE_INPUT.md).
 - **Login:** CN uses the official embedded login; Global uses official browser login with a callback to the app. At startup, choose **This Session Only** or **Remember Login** using macOS Keychain.
 - **Language:** App-owned menus, prompts and bundled interface text are English. Login pages, announcements and other content served by Kuro may use the service's language. Character artwork and audio remain the original assets.
 
-Quit the old app before replacing it in Applications. Avoid running multiple copies. If input stops responding after an update, check Input Monitoring, remove the old entry if needed, add the new app and restart it.
+Quit the old app before replacing it in Applications. Avoid running multiple copies. If input stops responding after an update, use **Restart Input Counting** in the menu or restart the app. Existing Input Monitoring or Accessibility grants are unnecessary for counting and can be removed in System Settings.
 
 ## Features and verification status
 
 - Transparent desktop pet, monitor positioning, scaling, always-on-top and click-through.
-- Native keyboard/mouse monitoring, permission feedback and recovery after authorization.
+- Permission-free keyboard counting and native mouse interactions, with status feedback and automatic recovery.
 - Controller button counting and clap feedback, following official 1.0.3 counting rules.
 - Local click counters isolated by app, account and service environment, using the official sync protocol.
 - Official regional login, panels, characters and item views.
@@ -38,7 +38,7 @@ Quit the old app before replacing it in Applications. Avoid running multiple cop
 - Menu bar controls, launch at login, redacted logs and login session management.
 - Configurable global shortcuts: F7 toggles Game Mode, F8 switches screens and F9 toggles the pet by default. Change or clear bindings in Settings. Mac modifier labels use Cmd and Option. Shortcuts pause while recording a replacement. Depending on your keyboard settings, function keys may require Fn.
 
-The upstream project previously verified CN startup, official login, room creation and leaving on a real Mac, and Global startup, About and settings panels. Global browser login, real account callbacks and two-player multiplayer still need hands-on acceptance testing. Input counting requires system authorization. Controller support uses Apple's GameController API and needs a physical controller test. Chest claims, synthesis, redemption codes and multi-monitor combinations have not been comprehensively verified. Rewards use official services; the app does not simulate rewards locally.
+The upstream project previously verified CN startup, official login, room creation and leaving on a real Mac, and Global startup, About and settings panels. Global browser login, real account callbacks and two-player multiplayer still need hands-on acceptance testing. Input counting uses public aggregate keyboard counters and mouse-only AppKit monitors without a permission prompt. Controller support uses Apple's GameController API and needs a physical controller test. Chest claims, synthesis, redemption codes and multi-monitor combinations have not been comprehensively verified. Rewards use official services; the app does not simulate rewards locally.
 
 The official in-app update service currently distributes Windows installers. Update the Mac app through this repository's Releases.
 

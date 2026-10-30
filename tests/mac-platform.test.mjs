@@ -12,7 +12,7 @@ function webview({ profile, readyState = 'loading', label = 'main', rejectLog = 
   const calls = [];
   const errors = [];
   const nodes = new Map();
-  let currentStatus = typeof inputStatus === 'boolean' ? { granted: inputStatus, running: inputStatus, error: null } : inputStatus;
+  let currentStatus = typeof inputStatus === 'boolean' ? { permissionRequired: false, running: inputStatus, error: null } : inputStatus;
   let interval;
   let inputListener;
   function invoke(command, payload) {
@@ -161,47 +161,47 @@ test('native input suppression still follows trusted main-window status', async 
   assert.equal(webview({ label: 'panel' }).documentEvents.has('mousedown'), false);
 });
 
-test('granting input access resumes once and removes the paused warning', async () => {
-  const view = webview({ readyState: 'complete', resumeStatus: { granted: true, running: true, error: null } });
+test('stopped permission-free counting resumes once and removes the warning', async () => {
+  const running = { permissionRequired: false, running: true, error: null };
+  const view = webview({ readyState: 'complete', resumeStatus: running });
   await drain();
-  assert.match(view.warning(), /Input Monitoring/);
-  assert.equal(view.calls.filter(call => call.command === 'resume_input_monitor').length, 0);
-  view.setStatus({ granted: true, running: false, error: 'input_access_granted_waiting_for_resume' });
-  await view.tick();
   assert.equal(view.warning(), undefined);
   assert.equal(view.calls.filter(call => call.command === 'resume_input_monitor').length, 1);
-  view.setStatus({ granted: true, running: true, error: null });
+  view.setStatus(running);
   await view.tick();
   assert.equal(view.calls.filter(call => call.command === 'resume_input_monitor').length, 1);
   view.emit('pagehide', {});
   assert.equal(view.tick(), undefined);
 });
 
-test('a failed input recovery stays visible without repeatedly rebuilding the tap', async () => {
-  const status = { granted: true, running: false, error: 'input_event_tap_disabled' };
+test('a failed recovery stays visible without repeatedly restarting counters', async () => {
+  const status = { permissionRequired: false, running: false, error: 'input_counter_not_running' };
   const view = webview({ readyState: 'complete', inputStatus: status, resumeStatus: status });
   await drain();
-  assert.match(view.warning(), /monitoring has not started/);
+  assert.match(view.warning(), /Restart Input Counting/);
+  assert.doesNotMatch(view.warning(), /Input Monitoring|System Settings|permission is granted/);
   await view.tick();
   await view.tick();
   assert.equal(view.calls.filter(call => call.command === 'resume_input_monitor').length, 1);
-  view.setStatus({ granted: false, running: false, error: 'input_monitoring_permission_required' });
+  view.setStatus({ permissionRequired: false, running: true, error: null });
   await view.tick();
   view.setStatus(status);
   await view.tick();
   assert.equal(view.calls.filter(call => call.command === 'resume_input_monitor').length, 2);
 });
 
-test('unreadable input status is not reported as granted or running', async () => {
+test('unreadable input status does not trigger recovery', async () => {
   const view = webview({ readyState: 'complete', rejectStatus: true });
   await drain();
   assert.match(view.warning(), /Could not read/);
   assert.equal(view.calls.filter(call => call.command === 'resume_input_monitor').length, 0);
 });
 
-test('input permission guidance names the current GLOBAL application', async () => {
-  const view = webview({ readyState: 'complete', profile: { productName: 'Wuwa Tappo Global Mac' } });
+test('running permission-free counting has no permission warning', async () => {
+  const view = webview({ readyState: 'complete', inputStatus: true });
   await drain();
-  assert.match(view.warning(), /Wuwa Tappo Global Mac/);
-  assert.doesNotMatch(view.warning(), /CN Mac/);
+  assert.equal(view.warning(), undefined);
+  const log = view.calls.find(call => call.command === 'write_app_log').payload.message;
+  assert.match(log, /running=true permissionRequired=false/);
+  assert.doesNotMatch(log, /granted=/);
 });
