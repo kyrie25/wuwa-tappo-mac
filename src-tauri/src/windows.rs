@@ -118,6 +118,7 @@ fn initialize(app: &AppHandle, label: &str) -> Result<String, String> {
         include_str!("../../scripts/mac-websocket.js"),
         include_str!("../../scripts/mac-platform.js")
     );
+    initialization.push_str(include_str!("../../scripts/mac-updater.js"));
     if label == "main" && cfg!(debug_assertions) && std::env::args().any(|arg| arg == "--self-test")
     {
         initialization.push_str(include_str!("../../scripts/runtime-smoke.js"));

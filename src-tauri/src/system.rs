@@ -1,9 +1,8 @@
-use crate::profile::Region;
 use serde_json::{json, Value};
 use std::{
     ffi::c_void,
     fs::{self, OpenOptions},
-    io::{Read, Write},
+    io::Write,
     path::Path,
     process::Command,
     ptr::NonNull,
@@ -16,7 +15,6 @@ use tauri_plugin_opener::OpenerExt;
 
 const MAX_LOG_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_MESSAGE_CHARS: usize = 32 * 1024;
-const MAX_MANIFEST_BYTES: u64 = 2 * 1024 * 1024;
 static LOG_WRITE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 // These describe the recovered production frontends, not Rust's compilation profile.
@@ -310,7 +308,7 @@ fn sysctl(name: &str) -> Result<String, String> {
     output("/usr/sbin/sysctl", &["-n", name])
 }
 
-fn system_version() -> Result<String, String> {
+pub(crate) fn system_version() -> Result<String, String> {
     output("/usr/bin/sw_vers", &["-productVersion"])
 }
 
@@ -522,82 +520,6 @@ pub fn open_log_dir(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-fn validate_manifest_endpoint(region: Region, endpoint: &str) -> Result<reqwest::Url, String> {
-    let url = reqwest::Url::parse(endpoint).map_err(|_| "invalid update manifest URL")?;
-    let host = url.host_str().ok_or("update manifest URL has no host")?;
-    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
-        return Err("update manifest must use HTTPS without credentials".into());
-    }
-    if host != region.asset_host() || url.port_or_known_default() != Some(443) || url.fragment().is_some()
-    {
-        return Err("update manifest is outside the current region official distribution host".into());
-    }
-    Ok(url)
-}
-
-fn mac_update_status(manifest: &Value, target: &str, region: Region) -> Result<Value, String> {
-    let platforms = manifest
-        .get("platforms")
-        .and_then(Value::as_object)
-        .ok_or("The update manifest has no platform information")?;
-    let Some(platform) = platforms.get(target) else {
-        return Err("The official update manifest has no build for this Mac. Update the Mac app manually.".into());
-    };
-    let url = platform
-        .get("url")
-        .and_then(Value::as_str)
-        .ok_or("The macOS update manifest has no download URL")?;
-    let url = validate_manifest_endpoint(region, url)?;
-    if url.path().to_ascii_lowercase().ends_with(".exe")
-        || url.path().to_ascii_lowercase().ends_with(".msi")
-    {
-        return Err("The macOS update points to a Windows installer. Installation was refused.".into());
-    }
-    if platform
-        .get("signature")
-        .and_then(Value::as_str)
-        .is_none_or(str::is_empty)
-    {
-        return Err("The macOS update has no signature. Installation was refused.".into());
-    }
-    Err("A macOS update is available, but this community build has no trusted updater signature configured. Update the Mac app manually.".into())
-}
-
-fn check_app_update(region: Region, endpoint: &str) -> Result<Value, String> {
-    let url = validate_manifest_endpoint(region, endpoint)?;
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| e.to_string())?;
-    let response = client.get(url).send().map_err(|_| "Could not read the official update manifest")?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(format!("Could not read the official update manifest (HTTP {})", status.as_u16()));
-    }
-    if response
-        .content_length()
-        .is_some_and(|size| size > MAX_MANIFEST_BYTES)
-    {
-        return Err("The official update manifest exceeds the size limit".into());
-    }
-    let mut bytes = Vec::new();
-    response
-        .take(MAX_MANIFEST_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| "Could not read the official update manifest")?;
-    if bytes.len() as u64 > MAX_MANIFEST_BYTES {
-        return Err("The official update manifest exceeds the size limit".into());
-    }
-    let manifest: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid official update manifest")?;
-    let target = match std::env::consts::ARCH {
-        "aarch64" => "darwin-aarch64",
-        "x86_64" => "darwin-x86_64",
-        _ => return Err("No update channel exists for this Mac architecture".into()),
-    };
-    mac_update_status(&manifest, target, region)
-}
-
 pub fn dispatch(app: &AppHandle, command: &str, args: &Value) -> Option<Result<Value, String>> {
     let result = match command {
         "get_track_os_info" => {
@@ -614,9 +536,11 @@ pub fn dispatch(app: &AppHandle, command: &str, args: &Value) -> Option<Result<V
                 _ => Err("write_app_log requires string level and message".into()),
             }
         }
-        "check_app_update" => match args.get("endpoint").and_then(Value::as_str) {
-            Some(endpoint) => check_app_update(Region::from_app(app), endpoint),
-            None => Err("check_app_update requires a manifest endpoint".into()),
+        "check_app_update" => crate::updater::check(app),
+        "get_mac_build_info" => Ok(crate::updater::build_info()),
+        "open_mac_update" => match (args.get("action").and_then(Value::as_str), args.get("version").and_then(Value::as_str)) {
+            (Some(action), Some(version)) => crate::updater::open(app, action, version),
+            _ => Err("Missing update action or version".into()),
         },
         "is_devtools_hotkeys_build" => Ok(json!(DEVTOOLS_HOTKEYS_BUILD)),
         "is_internal_testing_build" => Ok(json!(INTERNAL_TESTING_BUILD)),
@@ -745,54 +669,4 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
-    #[test]
-    fn windows_update_never_becomes_a_mac_update() {
-        let manifest = json!({ "version": "1.0.0", "platforms": { "windows-x86_64": { "url": "https://wutheringwaves-wuwatappo.kurogames-global.com/setup.exe", "signature": "signature" } } });
-        let error = mac_update_status(&manifest, "darwin-aarch64", Region::Global).unwrap_err();
-        assert!(error.contains("no build for this Mac"));
-        let disguised = json!({ "platforms": { "darwin-aarch64": { "url": "https://wutheringwaves-wuwatappo.kurogames-global.com/setup.exe", "signature": "signature" } } });
-        assert!(mac_update_status(&disguised, "darwin-aarch64", Region::Global)
-            .unwrap_err()
-            .contains("Windows installer"));
-    }
-
-    #[test]
-    fn malformed_and_unsigned_manifests_fail_explicitly() {
-        assert!(mac_update_status(&json!({}), "darwin-aarch64", Region::Global).is_err());
-        let unsigned = json!({ "platforms": { "darwin-aarch64": { "url": "https://wutheringwaves-wuwatappo.kurogames-global.com/mac.tar.gz" } } });
-        assert!(mac_update_status(&unsigned, "darwin-aarch64", Region::Global)
-            .unwrap_err()
-            .contains("no signature"));
-    }
-
-    #[test]
-    fn manifest_endpoints_require_official_https_hosts() {
-        assert!(validate_manifest_endpoint(Region::Global,
-            "https://wutheringwaves-wuwatappo.kurogames-global.com/app/latest.json"
-        )
-        .is_ok());
-        assert!(validate_manifest_endpoint(Region::Global,
-            "https://kurogames-global.com.evil.example/latest.json"
-        )
-        .is_err());
-        assert!(validate_manifest_endpoint(Region::Global,
-            "http://wutheringwaves-wuwatappo.kurogames-global.com/latest.json"
-        )
-        .is_err());
-        assert!(validate_manifest_endpoint(Region::Global,
-            "https://user:pass@wutheringwaves-wuwatappo.kurogames-global.com/latest.json"
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn manifests_are_bound_to_the_current_application_region() {
-        let cn = format!("https://{}/app/version-json/latest.json", Region::Cn.asset_host());
-        let global = format!("https://{}/app/version-json/latest-global.json", Region::Global.asset_host());
-        assert!(validate_manifest_endpoint(Region::Cn, &cn).is_ok());
-        assert!(validate_manifest_endpoint(Region::Global, &global).is_ok());
-        assert!(validate_manifest_endpoint(Region::Cn, &global).is_err());
-        assert!(validate_manifest_endpoint(Region::Global, &cn).is_err());
-        assert!(validate_manifest_endpoint(Region::Global, &format!("https://{}:444/latest.json", Region::Global.asset_host())).is_err());
-    }
 }

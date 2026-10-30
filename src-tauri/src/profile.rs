@@ -34,13 +34,6 @@ impl Region {
         }
     }
 
-    pub fn asset_host(self) -> &'static str {
-        match self {
-            Self::Cn => "mc-wuwatappo.kurogames-global.com",
-            Self::Global => "wutheringwaves-wuwatappo.kurogames-global.com",
-        }
-    }
-
     pub fn initialization_script(self) -> String {
         let profile = json!({
             "region": if self == Self::Cn { "CN" } else { "GLOBAL" },
@@ -68,7 +61,6 @@ mod tests {
         assert!(Region::from_identifier("dev.w33d.wuwatappo.mac").is_err());
         assert!(Region::from_identifier("global").is_err());
         assert_ne!(Region::Cn.api_host(), Region::Global.api_host());
-        assert_ne!(Region::Cn.asset_host(), Region::Global.asset_host());
     }
 
     #[test]

@@ -10,6 +10,7 @@ mod shortcuts;
 mod startup;
 mod storage;
 mod system;
+mod updater;
 mod windows;
 
 use serde_json::Value;
@@ -147,6 +148,8 @@ const SYSTEM_COMMANDS: &[&str] = &[
     "get_track_os_info",
     "get_boot_diagnostics",
     "check_app_update",
+    "get_mac_build_info",
+    "open_mac_update",
     "is_devtools_hotkeys_build",
     "is_internal_testing_build",
     "is_elevated_autostart_enabled",
@@ -271,6 +274,7 @@ pub fn run() {
         .manage(input::InputMonitor::new())
         .manage(socket::SocketState::default())
         .manage(region)
+        .manage(updater::UpdaterState::default())
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) && matches!(window.label(), "panel" | "main") {
                 let app = window.app_handle().clone();

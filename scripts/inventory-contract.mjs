@@ -22,7 +22,7 @@ function commandContractsFor(clickCacheEnvironment) {
     apply_main_window_position: { request: object({ payload: object({ alwaysOnTop: boolean, position: { type: 'string', enum: ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'] }, applyPosition: boolean }) }) },
     check_app_update: {
       request: object({ endpoint: string }), response: { anyOf: [{ type: 'null' }, object({ rid: number, currentVersion: string, version: string, date: optional(string), body: optional(string), rawJson: { type: 'object' } })] },
-      notes: 'A non-null result must be a real updater resource; the frontend constructs Update and uses rid with plugin:updater commands.',
+      notes: 'Recovered Windows contract: the original frontend constructs Update using rid. Mac preparation replaces this flow with a fork-release download dialog; Mac metadata must never be wrapped in Update.',
     },
     get_app_shortcuts: { response: shortcuts },
     set_app_shortcuts: { request: object({ config: shortcuts }) },

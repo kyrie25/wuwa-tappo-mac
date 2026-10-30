@@ -48,12 +48,12 @@ test('CN SDK script and stylesheet use HTTPS from the local Tauri origin', () =>
 });
 
 test('Mac update feedback preserves the native platform explanation', () => {
-  assert.equal(patchMacUpdateFeedback('if(h.kind==="error"){ht("check_failed"),ge.value=n("setting_version_check_failed");return}'), 'if(h.kind==="error"){ht("check_failed"),ge.value=h.message||n("setting_version_check_failed");return}');
+  assert.equal(patchMacUpdateFeedback('if(h.kind==="error"){ht("check_failed"),ge.value=n("setting_version_check_failed");return}'), 'if(h.kind==="external"){ge.value=h.message;return}if(h.kind==="error"){ht("check_failed"),ge.value=h.message||n("setting_version_check_failed");return}');
   assert.throws(() => patchMacUpdateFeedback(''), /update feedback changed/);
 });
 
 test('Mac update feedback follows changed minifier aliases in official 1.0.3', () => {
-  assert.equal(patchMacUpdateFeedback('if(_.kind==="error"){wt("check_failed"),le.value=t("setting_version_check_failed");return}'), 'if(_.kind==="error"){wt("check_failed"),le.value=_.message||t("setting_version_check_failed");return}');
+  assert.equal(patchMacUpdateFeedback('if(_.kind==="error"){wt("check_failed"),le.value=t("setting_version_check_failed");return}'), 'if(_.kind==="external"){le.value=_.message;return}if(_.kind==="error"){wt("check_failed"),le.value=_.message||t("setting_version_check_failed");return}');
   const wrapper = 'async function invoke(e,t={},n){return window.__TAURI_INTERNALS__.invoke(e,t,n)}';
   assert.ok(patchSessionBarriers(wrapper, 1).includes('SESSION__?.flush()'));
   assert.throws(() => patchSessionBarriers(wrapper, 2), /Expected 2/);

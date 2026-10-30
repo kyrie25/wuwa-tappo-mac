@@ -15,6 +15,8 @@ if (!entry) throw new Error('Original frontend entry module not found.');
 const files = new Map(await Promise.all((await readdir(path.join(source, 'assets')))
   .filter(name => name.endsWith('.js'))
   .map(async name => [`assets/${name}`, await readFile(path.join(source, 'assets', name), 'utf8')])));
+const updateBackgrounds = (await readdir(path.join(source, 'assets'))).filter(name => /^update-bg-[\w-]+\.jpg$/.test(name));
+if (updateBackgrounds.length !== 1) throw new Error('Expected one original update dialog background. Reconcile the upstream version before building.');
 const original = files.get(entry);
 if (!original?.includes(`const APP_REGION="${profile.region}"`)) throw new Error(`Expected official ${profile.region} frontend.`);
 let main = patchMacUpdater(original);
@@ -38,7 +40,7 @@ await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
 await cp(source, output, { recursive: true });
 await writeFile(path.join(output, 'index.html'), index.replace(/<html lang="[^"]*">/, '<html lang="en">')
-  .replace('</head>', '<style>.btn-check-update{white-space:nowrap}</style></head>'));
+  .replace('</head>', `<style>:root{--mac-update-background:url('./assets/${updateBackgrounds[0]}')}.btn-check-update{white-space:nowrap}</style></head>`));
 const bootstrap = await readFile(path.join(root, 'scripts/bootstrap.html'), 'utf8');
 await writeFile(path.join(output, 'bootstrap.html'), bootstrap
   .replace('<title>Wuwa Tappo CN Mac</title>', `<title>${profile.productName}</title>`)

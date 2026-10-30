@@ -40,7 +40,7 @@ Quit the old app before replacing it in Applications. Avoid running multiple cop
 
 The upstream project previously verified CN startup, official login, room creation and leaving on a real Mac, and Global startup, About and settings panels. Global browser login, real account callbacks and two-player multiplayer still need hands-on acceptance testing. Input counting uses public aggregate keyboard counters and mouse-only AppKit monitors without a permission prompt. Controller support uses Apple's GameController API and needs a physical controller test. Chest claims, synthesis, redemption codes and multi-monitor combinations have not been comprehensively verified. Rewards use official services; the app does not simulate rewards locally.
 
-The official in-app update service currently distributes Windows installers. Update the Mac app through this repository's Releases.
+**Check for Updates** checks this fork’s GitHub Releases and compares the full Mac release revision. When an update is available, download the matching regional package, quit the app normally, and replace the same app in Applications. Settings, counters and login-storage choices stay in their existing locations. Source builds without a release identity show the latest published build without claiming they are up to date. See [the Mac update flow](docs/MAC_UPDATES.md).
 
 ## Build from source
 

@@ -55,18 +55,21 @@ export function patchMacUpdateFeedback(source) {
   const pattern = /if\(([$\w]+)\.kind==="error"\)\{([^{}]*?)([$\w]+)\.value=([$\w]+)\("setting_version_check_failed"\);return\}/g;
   const matches = [...source.matchAll(pattern)];
   if (matches.length !== 1) throw new Error('Original update feedback changed; reconcile the Mac update message before building.');
-  return source.replace(pattern, (_, error, before, target, translate) => `if(${error}.kind==="error"){${before}${target}.value=${error}.message||${translate}("setting_version_check_failed");return}`);
+  return source.replace(pattern, (_, error, before, target, translate) => `if(${error}.kind==="external"){${target}.value=${error}.message;return}if(${error}.kind==="error"){${before}${target}.value=${error}.message||${translate}("setting_version_check_failed");return}`);
 }
 
 export function patchMacUpdater(source) {
-  const resolver = 'async function resolveUpdaterLatestJsonUrl(){const e=resolveUpdaterLatestHostJsonUrl();if(!e)return null;';
-  const recovery = 'async function resolveUpdaterLatestJsonUrl(){let e=resolveUpdaterLatestHostJsonUrl();if(!e){const config=unwrapApiData(await activityInfo());const host=typeof config?.assets_host==="string"?config.assets_host.trim():"";if(!host||host===LOCAL_ROLE_ASSETS_HOST)throw new Error("The official configuration has no update asset URL");setUpdaterAssetsHost(host,{triggerSilentCheck:!1});e=resolveUpdaterLatestHostJsonUrl()}';
-  const failure = 'if(logDiagnostic("UPDATE","check_failed",{stage:"check",reason_code:diagnosticErrorCode(t),fallback:e?.interactive?"report_error":"treat_as_latest"},"warn"),e?.interactive)return{kind:"error",message:n};try{const s=await getVersion();return console.warn("[updater] check skipped (treat as latest)",t),{kind:"none",currentVersion:s}}catch{return{kind:"error",message:n}}';
-  const report = 'return logDiagnostic("UPDATE","check_failed",{stage:"check",reason_code:diagnosticErrorCode(t),fallback:"report_error"},"warn"),{kind:"error",message:n}';
-  for (const original of [resolver, failure]) {
-    if (source.split(original).length !== 2) throw new Error('Original updater flow changed; reconcile the Mac update path before building.');
-  }
-  return source.replace(resolver, recovery).replace(failure, report);
+  const replacements = {
+    checkForAppUpdate: 'async function checkForAppUpdate(options){return window.__WUWATAPPO_UPDATER__.check(options)}',
+    resolveUpdaterLatestJsonUrl: 'async function resolveUpdaterLatestJsonUrl(){return "https://api.github.com/repos/kyrie25/wuwa-tappo-mac/releases?per_page=100"}',
+    fetchUpdaterManifest: 'async function fetchUpdaterManifest(){return null}',
+    downloadAndInstallAppUpdate: 'async function downloadAndInstallAppUpdate(){throw new Error("Use Check for Updates to download the Mac package, then quit and replace this app.")}',
+  };
+  const tree = parse(source, { sourceType: 'module', ecmaVersion: 'latest' });
+  const targets = tree.body.filter(node => node.type === 'FunctionDeclaration' && Object.hasOwn(replacements, node.id.name));
+  if (targets.length !== Object.keys(replacements).length) throw new Error('Original updater flow changed; reconcile the Mac update path before building.');
+  for (const node of targets.sort((a, b) => b.start - a.start)) source = source.slice(0, node.start) + replacements[node.id.name] + source.slice(node.end);
+  return source;
 }
 
 export function patchMacAbout(source, region = 'CN') {

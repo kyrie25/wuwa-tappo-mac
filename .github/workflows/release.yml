@@ -49,6 +49,8 @@ jobs:
             done
           done
           cat > /tmp/release-notes.md <<'NOTES'
+          <!-- wuwa-mac-minimum: 13.0 -->
+
           ## Wuwa Tappo · Unofficial macOS Community Build (CN / Global)
 
           Choose a file containing `CN` for a mainland China account or `Global` for a Global account. Both apps use English by default. Their accounts, settings and counters are isolated, and both can be installed together.
