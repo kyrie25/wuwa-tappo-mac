@@ -62,8 +62,6 @@ test('an update is ready only when every required compatibility and packaging st
     assert.ok(!args.includes('--draft'));
     assert.ok(args.includes(`Sync official ${profile.label} resources 1.0.2`));
     assert.ok(args[args.indexOf('--body') + 1].includes(`official-${region}-review`));
-    const mirrorFailed = updatePullRequestArguments({ profile, version: '1.0.2', branch: 'codex/candidate', runUrl: 'run', outcomes: { ...outcomes, mirror: 'failure' } });
-    assert.ok(mirrorFailed[mirrorFailed.indexOf('--body') + 1].includes('mirror: failure'));
     for (const stage of Object.keys(outcomes)) for (const result of ['failure', 'skipped', 'cancelled', undefined]) {
       const draft = updatePullRequestArguments({ profile, version: '1.0.2', branch: 'codex/candidate', runUrl: 'run', outcomes: { ...outcomes, [stage]: result } });
       assert.ok(draft.includes('--draft'), `${region} ${stage} ${result}`);

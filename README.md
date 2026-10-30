@@ -89,7 +89,7 @@ Built apps are under `src-tauri/target/release/bundle/macos/`; distribution pack
 - **Commits and pull requests:** Each region independently downloads assets, runs JavaScript and Rust tests, builds the native app and packages ZIP/DMG files. Caches and artifacts are isolated by region.
 - **Releases:** A `v*` tag (for example `v1.0.3-mac.1`) runs checks for both regions. All four packages are published in one release only after both pass. Manual releases are also supported.
 - **Official synchronization:** Daily jobs check each official service. Compatible updates produce an update PR; extracted versions that need adaptation produce a draft with contract differences and failure logs. Failures create a regional issue. Unverified versions are never automatically released.
-- **Build mirrors:** Verified installers are cached by region and resource lock, with integrity checked on reuse. CI downloads from the official source first; after transient failures it may use the repository's [build mirror](https://github.com/kyrie25/wuwa-tappo-mac/releases/tag/upstream-resources), pinned by the official SHA-256 and size. Discovery and new resource locks always use official sources. Mirror EXEs are build inputs, not Mac installers.
+- **Resource cache:** CI downloads installers from official sources and caches them by region and resource lock. Every reuse verifies the official SHA-256 and size. Installers are never published as release assets; releases contain the Mac app packages.
 
 Check or synchronize the selected region locally (set `WUWA_REGION=global` for Global):
 

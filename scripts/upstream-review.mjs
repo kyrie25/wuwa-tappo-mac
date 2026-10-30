@@ -52,7 +52,7 @@ export function exactIssueNumber(issues, title) {
 
 export function updatePullRequestArguments({ profile, version, branch, runUrl, outcomes }) {
   const validated = reviewStages.every(stage => outcomes[stage] === 'success');
-  const results = [...reviewStages, ...(outcomes.mirror === undefined ? [] : ['mirror'])].map(stage => `- ${stage}: ${outcomes[stage] || 'skipped'}`).join('\n');
+  const results = reviewStages.map(stage => `- ${stage}: ${outcomes[stage] || 'skipped'}`).join('\n');
   const body = [
     `Pin official ${profile.label} resources to ${version}. The other region is unchanged.`,
     validated ? 'Resource checks, contract tests, Rust tests, native build and ZIP/DMG packaging passed. Verify real account login, input permissions and multiplayer before merging and releasing.' : 'This candidate has not passed compatibility validation. Keep this PR as a draft until interface changes are reviewed, failures are fixed and CI passes for both regions.',
@@ -75,7 +75,6 @@ export async function openUpdatePullRequest({ projectRoot = root, profile = getR
   run('git', ['commit', '-m', `chore: sync official ${profile.id} resources ${check.latestVersion}`]);
   run('git', ['push', 'origin', branch]);
   const outcomes = Object.fromEntries(reviewStages.map(stage => [stage, environment[`${stage.toUpperCase()}_OUTCOME`]]));
-  if (environment.MIRROR_OUTCOME !== undefined) outcomes.mirror = environment.MIRROR_OUTCOME;
   const runUrl = `https://github.com/${environment.GITHUB_REPOSITORY}/actions/runs/${environment.GITHUB_RUN_ID}`;
   run('gh', updatePullRequestArguments({ profile, version: check.latestVersion, branch, runUrl, outcomes }));
 }

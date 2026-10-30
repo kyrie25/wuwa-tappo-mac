@@ -35,9 +35,9 @@ The sync workflow retains contract differences and validation logs and opens a d
 
 ## Running automation in this fork
 
-Enable GitHub Actions in the fork and allow GitHub Actions to create and approve pull requests in repository Actions settings. The workflow requires repository contents, pull request and issue write permissions. It uses the current `github.repository` for PRs, reports and the `upstream-resources` build mirror. It does not need a personal account login or game credentials.
+Enable GitHub Actions in the fork and allow GitHub Actions to create and approve pull requests in repository Actions settings. The workflow requires repository contents, pull request and issue write permissions. It uses the current `github.repository` for PRs and reports. It does not need a personal account login or game credentials.
 
-A new fork may have no installer mirror release yet. A successful verified sync can populate it; until then, uncached builds need a working connection to the official installer CDN. Mac releases and build mirror EXEs serve different purposes.
+CI downloads resources from the official installer CDN and stores verified installers in GitHub Actions caches. Uncached builds need a working connection to the official CDN. Resources are never published in a separate release; release assets contain only Mac app packages.
 
 ## In-app Check for Update
 
