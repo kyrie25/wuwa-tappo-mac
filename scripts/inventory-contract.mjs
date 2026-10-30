@@ -11,6 +11,8 @@ const roles = new Set(['invoke', 'invoke$1', 'listen', 'listen$1', 'once', 'emit
 const number = { type: 'number' }, string = { type: 'string' }, boolean = { type: 'boolean' };
 const optional = schema => ({ ...schema, optional: true });
 const object = properties => ({ type: 'object', properties });
+const shortcutBinding = object({ modifiers: number, key: number });
+const shortcuts = object({ gameMode: shortcutBinding, switchScreen: shortcutBinding, togglePet: shortcutBinding });
 const insets = object({ left: number, top: number, right: number, bottom: number });
 const region = object({ left: number, top: number, width: number, height: number, memberId: optional(number) });
 const clickCount = { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER };
@@ -22,6 +24,9 @@ function commandContractsFor(clickCacheEnvironment) {
       request: object({ endpoint: string }), response: { anyOf: [{ type: 'null' }, object({ rid: number, currentVersion: string, version: string, date: optional(string), body: optional(string), rawJson: { type: 'object' } })] },
       notes: 'A non-null result must be a real updater resource; the frontend constructs Update and uses rid with plugin:updater commands.',
     },
+    get_app_shortcuts: { response: shortcuts },
+    set_app_shortcuts: { request: object({ config: shortcuts }) },
+    set_shortcut_capture: { request: object({ active: boolean }) },
     get_app_update_detail: { response: { anyOf: [{ type: 'null' }, { type: 'object', required: ['newVersion'] }] } },
     get_boot_diagnostics: { response: object({ system: optional({ type: 'object' }), runtime: optional({ type: 'object' }), cpu: optional({ type: 'object' }), memory: optional({ type: 'object' }), gpus: optional({ type: 'array' }), display_names: optional({ type: 'array' }) }) },
     get_installed_app_locale: { request: object({ domestic: boolean }), response: string },
@@ -62,12 +67,14 @@ function commandContractsFor(clickCacheEnvironment) {
     set_panel_window_collapsed: { request: object({ payload: object({ collapsed: boolean }) }) },
     start_silent_nsis_install: { request: object({ payload: { type: 'object' } }) },
     start_silent_nsis_uninstall: { request: object({ payload: object({ deleteUserData: boolean }) }) },
-    sync_native_menu: { request: object({ labels: object(Object.fromEntries(['openBag', 'openAtlas', 'openExchange', 'openRoom', 'hidePet', 'showPet', 'trayOpenSettings', 'dockSettings', 'windowSize', 'windowPassthrough', 'windowOpacity', 'restart', 'quit', 'trayTooltip'].map(key => [key, string]))), petDockVisible: boolean, petScale: number, windowOpacity: number, windowPassthrough: boolean }) },
+    sync_native_menu: { request: object({ labels: object(Object.fromEntries(['openBag', 'openAtlas', 'openExchange', 'openRoom', 'hidePet', 'showPet', 'trayOpenSettings', 'dockSettings', 'windowSize', 'windowPassthrough', 'windowOpacity', 'gameMode', 'restart', 'quit', 'trayTooltip'].map(key => [key, string]))), petDockVisible: boolean, petScale: number, windowOpacity: number, windowPassthrough: boolean, gameMode: boolean }) },
     write_app_log: { request: object({ level: string, message: string }) },
   };
 }
 
 const nativeEventContracts = {
+  'app-shortcut': { payload: { type: 'string', enum: ['gameMode', 'switchScreen', 'togglePet'] } },
+  'app-shortcuts-changed': { payload: shortcuts },
   'key-press': { payload: string, notes: 'Keyboard only. Preserve the same key string for release; literal space is " ". Repeated press is deduplicated by a Set.' },
   'key-release': { payload: string, notes: 'One matched keyboard release increments local click count. Do not emit mouse buttons on this stream.' },
   'mouse-move': { payload: object({ x: number, y: number, memberId: optional(number) }), notes: 'Global physical screen pixels. Frontend subtracts Tauri innerPosition and divides by scaleFactor.' },
@@ -93,7 +100,7 @@ nativeEventContracts['cat-settings-pet-scale-drag'] = { payload: object({ active
 nativeEventContracts['cat-settings-opacity'] = { payload: object({ opacityPercent: number }) };
 nativeEventContracts['cat-settings-pet-scale'] = { payload: object({ petScale: number }) };
 nativeEventContracts['cat-settings-locale'] = { payload: object({ locale: string }) };
-for (const name of ['about-open', 'oss-notice-open', 'tray-quit', 'tray-restart', 'tray-toggle-pet-visibility', 'tray-toggle-window-passthrough', 'update-modal-open', 'cat-auth-login-success', 'cat-auth-logout', 'cat-panel-window-closed', 'cat-panel-request-login', 'cat-persist-clicks-before-exit', 'cat-persist-clicks-done', 'cat-flush-clicks-before-logout', 'cat-flush-clicks-done', 'cat-disconnect-socket-before-exit', 'cat-disconnect-socket-done']) nativeEventContracts[name] = { payload: { type: 'undefined' } };
+for (const name of ['about-open', 'oss-notice-open', 'tray-quit', 'tray-restart', 'tray-toggle-pet-visibility', 'tray-toggle-window-passthrough', 'tray-toggle-game-mode', 'update-modal-open', 'cat-auth-login-success', 'cat-auth-logout', 'cat-panel-window-closed', 'cat-panel-request-login', 'cat-persist-clicks-before-exit', 'cat-persist-clicks-done', 'cat-flush-clicks-before-logout', 'cat-flush-clicks-done', 'cat-disconnect-socket-before-exit', 'cat-disconnect-socket-done']) nativeEventContracts[name] = { payload: { type: 'undefined' } };
 
 function children(node) {
   return Object.values(node).flatMap(value => Array.isArray(value) ? value : [value])
@@ -198,6 +205,16 @@ function staticValue(node, scope, seen = new Set()) {
     if (binding?.type !== 'variable' || seen.has(binding)) return unknown;
     seen.add(binding);
     return staticValue(binding.node, binding.scope, seen);
+  }
+  if (node.type === 'ObjectExpression') {
+    const result = {};
+    for (const property of node.properties) {
+      if (property.type !== 'Property' || property.computed || property.kind !== 'init') return unknown;
+      const value = staticValue(property.value, scope, new Set(seen));
+      if (value === unknown) return unknown;
+      result[property.key.name ?? property.key.value] = value;
+    }
+    return result;
   }
   if (node.type === 'UnaryExpression') {
     const argument = staticValue(node.argument, scope, new Set(seen));
@@ -414,14 +431,15 @@ export function inventoryAssets(assetDirectory, { version = '1.0.0' } = {}) {
       maxSafeClickCount: Number.MAX_SAFE_INTEGER,
       ...(typeof authCallbackScheme === 'string' ? { authCallbackScheme } : {}),
       defaultPosition: metadata.defaultPosition,
+      defaultAppShortcuts: staticValue({ type: 'Identifier', name: 'DEFAULT_APP_SHORTCUTS' }, metadata.entry.root),
       hotkeys: { switchDisplay: ['F8', 'f8'], toggleVisibility: ['F9', 'f9'], secondaryAction: ['F4', 'f4'], devtools: ['F5', 'f5'] },
     },
     bootContract: {
       entry: `index.html -> ${metadata.entry.file} router / -> ${mainModule} onMounted`,
       routes: Object.fromEntries(metadata.routes.map(route => [route.name.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase()), route.path])),
-      requiredResponses: ['is_internal_testing_build', 'is_devtools_hotkeys_build', 'get_main_desktop_safe_area', 'get_main_taskbar_insets', 'load_key_press_count', 'load_cumulative_click_count'],
+      requiredResponses: ['get_app_shortcuts', 'is_internal_testing_build', 'is_devtools_hotkeys_build', 'get_main_desktop_safe_area', 'get_main_taskbar_insets', 'load_key_press_count', 'load_cumulative_click_count'],
       requiredWindowMutations: ['set_main_force_cursor_ignore', 'set_main_window_fullscreen_shell', 'apply_main_window_position', 'set_main_window_content_bounds', 'set_main_hit_region'],
-      inputRegistration: ['mouse-move', 'mouse-button', 'global-clap-mouse', 'key-press', 'key-release', ...(eventMap.has('gamepad-button-press') ? ['gamepad-button-press'] : [])],
+      inputRegistration: ['app-shortcut', 'app-shortcuts-changed', 'mouse-move', 'mouse-button', 'global-clap-mouse', 'key-press', 'key-release', ...(eventMap.has('gamepad-button-press') ? ['gamepad-button-press'] : [])],
       auth: 'Frontend preserves official HTTP/Socket.IO account, inventory, rewards, and room protocols. Native backend owns window/event transport, not account emulation.',
     },
     nativeAliases: aliases,

@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 
 export function tauriArguments(action, profile, extra = []) {
   if (action === 'icons') return ['icon', `${profile.frontendDir}/app-icon.png`, '--output', profile.iconsDir, ...extra];
-  if (!['dev', 'build'].includes(action)) throw new Error(`未知构建操作：${action}`);
+  if (!['dev', 'build'].includes(action)) throw new Error(`Unknown build action: ${action}`);
   return [action, ...(action === 'build' ? ['--bundles', 'app'] : []),
     ...(profile.tauriConfig ? ['--config', profile.tauriConfig] : []), ...extra];
 }

@@ -164,7 +164,7 @@ test('native input suppression still follows trusted main-window status', async 
 test('granting input access resumes once and removes the paused warning', async () => {
   const view = webview({ readyState: 'complete', resumeStatus: { granted: true, running: true, error: null } });
   await drain();
-  assert.match(view.warning(), /输入监控/);
+  assert.match(view.warning(), /Input Monitoring/);
   assert.equal(view.calls.filter(call => call.command === 'resume_input_monitor').length, 0);
   view.setStatus({ granted: true, running: false, error: 'input_access_granted_waiting_for_resume' });
   await view.tick();
@@ -181,7 +181,7 @@ test('a failed input recovery stays visible without repeatedly rebuilding the ta
   const status = { granted: true, running: false, error: 'input_event_tap_disabled' };
   const view = webview({ readyState: 'complete', inputStatus: status, resumeStatus: status });
   await drain();
-  assert.match(view.warning(), /监听尚未启动/);
+  assert.match(view.warning(), /monitoring has not started/);
   await view.tick();
   await view.tick();
   assert.equal(view.calls.filter(call => call.command === 'resume_input_monitor').length, 1);
@@ -195,7 +195,7 @@ test('a failed input recovery stays visible without repeatedly rebuilding the ta
 test('unreadable input status is not reported as granted or running', async () => {
   const view = webview({ readyState: 'complete', rejectStatus: true });
   await drain();
-  assert.match(view.warning(), /无法读取/);
+  assert.match(view.warning(), /Could not read/);
   assert.equal(view.calls.filter(call => call.command === 'resume_input_monitor').length, 0);
 });
 

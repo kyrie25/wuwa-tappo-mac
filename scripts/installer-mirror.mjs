@@ -29,7 +29,7 @@ export async function publishPinnedInstaller({ projectRoot = root, profile = get
     if (!/^HTTP\/\S+ 404\b/.test(String(error.stdout))) throw error;
     if (!/^[a-f0-9]{40}$/.test(environment.GITHUB_SHA)) throw new Error('GITHUB_SHA is required when creating the upstream-resources release');
     try {
-      execute('gh', ['release', 'create', 'upstream-resources', '--repo', `github.com/${environment.GITHUB_REPOSITORY}`, '--target', environment.GITHUB_SHA, '--prerelease', '--latest=false', '--title', '官方资源构建镜像', '--notes', '按官方资源锁校验的原始安装包，仅供本仓库构建使用。Mac 应用请从 Mac 版本 Release 下载。'], { stdio: 'pipe', encoding: 'utf8' });
+      execute('gh', ['release', 'create', 'upstream-resources', '--repo', `github.com/${environment.GITHUB_REPOSITORY}`, '--target', environment.GITHUB_SHA, '--prerelease', '--latest=false', '--title', 'Official Resource Build Mirror', '--notes', 'Original installers verified against the official resource locks, for repository builds only. Download the Mac app from a Mac release.'], { stdio: 'pipe', encoding: 'utf8' });
     } catch (createError) {
       // The two regional jobs can both observe the first-run 404.
       const reason = String(createError.stderr);
@@ -39,7 +39,7 @@ export async function publishPinnedInstaller({ projectRoot = root, profile = get
   }
   const find = () => release.assets.find(asset => asset.name === name);
   const validateAsset = asset => {
-    if (!asset || asset.size !== lock.installer.size || asset.digest !== `sha256:${lock.installer.sha256}`) throw new Error(`GitHub 构建源镜像与官方锁不一致：${name}`);
+    if (!asset || asset.size !== lock.installer.size || asset.digest !== `sha256:${lock.installer.sha256}`) throw new Error(`GitHub build mirror does not match the official lock: ${name}`);
   };
   const existing = find();
   if (existing) {

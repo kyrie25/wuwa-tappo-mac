@@ -23,11 +23,11 @@ test('accepts only exact official HTTPS origin and CN versioned installers', () 
     url.replace('https://', 'https://user:password@'), `${url}#secret`,
     url.replace('.com/', '.com:8443/'),
   ]) assert.throws(() => officialAssetUrl(invalid));
-  assert.throws(() => parseManifest({ ...manifest, platforms: { 'windows-x86_64': { url: url.replace('-cn_', '-global_') } } }, manifestUrl), /国服/);
-  assert.throws(() => parseManifest({ ...manifest, version: '1.1.0' }, manifestUrl), /版本一致/);
-  assert.throws(() => parseManifest({ ...manifest, version: '../1.0.0' }, manifestUrl), /版本号/);
+  assert.throws(() => parseManifest({ ...manifest, platforms: { 'windows-x86_64': { url: url.replace('-cn_', '-global_') } } }, manifestUrl), /CN/);
+  assert.throws(() => parseManifest({ ...manifest, version: '1.1.0' }, manifestUrl), /matching its version/);
+  assert.throws(() => parseManifest({ ...manifest, version: '../1.0.0' }, manifestUrl), /version number/);
   assert.throws(() => parseManifest({ ...manifest, platforms: {} }, manifestUrl));
-  assert.throws(() => parseManifest({ ...manifest, platforms: { 'windows-x86_64': { url, signature: '' } } }, manifestUrl), /签名/);
+  assert.throws(() => parseManifest({ ...manifest, platforms: { 'windows-x86_64': { url, signature: '' } } }, manifestUrl), /signature/);
 });
 
 test('lock requires CN identity, installer size and content digest', () => {
@@ -42,8 +42,8 @@ test('lock requires CN identity, installer size and content digest', () => {
 
 test('installer validation detects truncation and same-size tampering', () => {
   assert.deepEqual(verifyInstaller(bytes, lock()), { size: bytes.length, sha256: lock().installer.sha256 });
-  assert.throws(() => verifyInstaller(bytes.subarray(1), lock()), /大小不匹配/);
-  assert.throws(() => verifyInstaller(Buffer.alloc(bytes.length), lock()), /SHA-256 不匹配/);
+  assert.throws(() => verifyInstaller(bytes.subarray(1), lock()), /size mismatch/);
+  assert.throws(() => verifyInstaller(Buffer.alloc(bytes.length), lock()), /SHA-256 mismatch/);
 });
 
 test('changed detection covers newer versions and republished installer URLs', () => {
@@ -74,11 +74,11 @@ test('discovery follows config, pointer, and manifest with redirects disabled', 
 
 test('discovery rejects failures and untrusted manifest redirects before fetching them', async () => {
   await assert.rejects(discoverUpstream(async () => ({ ok: false, status: 503 })), /HTTP 503/);
-  await assert.rejects(discoverUpstream(async () => ({ ok: true, json: async () => ({ code: 1 }) })), /配置无效/);
-  await assert.rejects(discoverUpstream(async () => ({ ok: true, json: async () => ({ code: 0, data: { assets_host: 'https://example.com' } }) })), /官方/);
+  await assert.rejects(discoverUpstream(async () => ({ ok: true, json: async () => ({ code: 1 }) })), /configuration/);
+  await assert.rejects(discoverUpstream(async () => ({ ok: true, json: async () => ({ code: 0, data: { assets_host: 'https://example.com' } }) })), /official/);
   const responses = [{ code: 0, data: { assets_host: assetsOrigin } }, { url: 'https://example.com/manifest.json' }];
   let count = 0;
-  await assert.rejects(discoverUpstream(async () => { count += 1; return { ok: true, json: async () => responses.shift() }; }), /官方/);
+  await assert.rejects(discoverUpstream(async () => { count += 1; return { ok: true, json: async () => responses.shift() }; }), /official/);
   assert.equal(count, 2);
 });
 
@@ -86,7 +86,7 @@ test('official requests retry transient connection failures with bounded backoff
   const sleeps = [];
   let count = 0;
   const result = await fetchOfficial(configUrl, {
-    stage: 'CN 活动配置', sleep: async milliseconds => sleeps.push(milliseconds),
+    stage: 'CN activity configuration', sleep: async milliseconds => sleeps.push(milliseconds),
     fetcher: async (input, options) => {
       assert.equal(input, configUrl);
       assert.equal(options.redirect, 'error');
@@ -104,12 +104,12 @@ test('exhausted transient failures identify the request stage, URL, attempt and 
   const rootCause = Object.assign(new Error('connect timed out'), { code: 'UND_ERR_CONNECT_TIMEOUT' });
   let count = 0;
   await assert.rejects(fetchOfficial(manifestUrl, {
-    stage: 'CN 版本清单', sleep: async () => {},
+    stage: 'CN version manifest', sleep: async () => {},
     fetcher: async () => { count += 1; throw new TypeError('fetch failed', { cause: rootCause }); },
   }), error => {
-    assert.ok(error.message.includes('CN 版本清单'));
+    assert.ok(error.message.includes('CN version manifest'));
     assert.ok(error.message.includes(manifestUrl));
-    assert.ok(error.message.includes('第 3 次请求'));
+    assert.ok(error.message.includes('attempt 3'));
     assert.ok(error.message.includes('UND_ERR_CONNECT_TIMEOUT'));
     assert.equal(error.cause.cause, rootCause);
     return true;
@@ -186,7 +186,7 @@ test('CN and Global manifests cannot cross official origins or installer names',
   assert.throws(() => parseManifest(globalManifest, globalManifestUrl));
   assert.throws(() => parseManifest(manifest, manifestUrl, globalProfile));
   const wrongName = { ...globalManifest, platforms: { 'windows-x86_64': { url: globalUrl.replace('-global_', '-cn_'), signature } } };
-  assert.throws(() => parseManifest(wrongName, globalManifestUrl, globalProfile), /国际服安装包/);
+  assert.throws(() => parseManifest(wrongName, globalManifestUrl, globalProfile), /Global installer/);
   assert.throws(() => officialAssetUrl(url, globalProfile));
   assert.throws(() => officialAssetUrl(globalUrl));
 });
@@ -197,7 +197,7 @@ test('both regional locks validate content only under their own profile', () => 
   assert.throws(() => validateLock(globalLock()));
   assert.throws(() => validateLock(lock(), globalProfile));
   assert.throws(() => verifyInstaller(bytes, globalLock()));
-  assert.throws(() => compareUpstream(lock(), globalLock()), /不同服务器/);
+  assert.throws(() => compareUpstream(lock(), globalLock()), /different regions/);
 });
 
 test('Global discovery uses its own activity host and global update pointer', async () => {

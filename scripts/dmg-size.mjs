@@ -22,8 +22,8 @@ export async function measureImage(directory) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (!process.argv[2]) throw new Error('请提供 DMG 内容目录。');
+  if (!process.argv[2]) throw new Error('Provide the DMG contents directory.');
   const result = await measureImage(process.argv[2]);
-  console.error(`DMG 内容逻辑大小：${result.logicalBytes} 字节；映像容量：${result.sizeMiB} MiB。`);
+  console.error(`DMG logical size: ${result.logicalBytes} bytes; image capacity: ${result.sizeMiB} MiB.`);
   console.log(result.sizeMiB);
 }

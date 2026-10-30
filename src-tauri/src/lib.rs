@@ -6,6 +6,7 @@ mod menu;
 mod profile;
 mod session;
 mod socket;
+mod shortcuts;
 mod startup;
 mod storage;
 mod system;
@@ -41,9 +42,9 @@ fn startup_status(app: &tauri::AppHandle) -> Value {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let message=error.unwrap_or_else(||match (loading,mode) {
-        (true,Some(startup::SessionMode::Keychain))=>"正在读取登录信息…\n请在 macOS 的钥匙串提示中自行处理授权。".into(),
-        (true,_)=>"正在启动，仅本次会话保存登录信息…".into(),
-        _=>"仅本次会话：登录信息只保存在内存，退出后清除。\n记住登录：使用 macOS 钥匙串，需要系统授权。".into(),
+        (true,Some(startup::SessionMode::Keychain))=>"Reading saved credentials…\nRespond to the macOS Keychain authorization prompt.".into(),
+        (true,_)=>"Starting with credentials stored for this session only…".into(),
+        _=>"This session only: credentials stay in memory and are cleared on exit.\nRemember login: store credentials in macOS Keychain; system authorization is required.".into(),
     });
     serde_json::json!({"loading":loading,"message":message,"mode":mode})
 }
@@ -54,7 +55,7 @@ fn begin_session(
     remember_choice: bool,
 ) -> Result<(), String> {
     if app.try_state::<session::SessionStore>().is_some() {
-        return Err("已有登录会话。请先退出应用，再重新启动并选择登录信息保存方式。".into());
+        return Err("A session is already active. Quit and reopen the app to choose how to store credentials.".into());
     }
     if app
         .state::<StartupState>()
@@ -103,7 +104,7 @@ fn begin_session(
         let scheduling = app.run_on_main_thread(move || {
             let result = (|| -> Result<(), String> {
                 if !handle.manage(session?) {
-                    return Err("已有登录会话，无法更换保存方式。请退出应用后重试。".into());
+                    return Err("A session is already active. Quit and reopen the app to change credential storage.".into());
                 }
                 windows::setup(&handle)?;
                 if let Err(error) = input::start(handle.clone()) {
@@ -121,7 +122,7 @@ fn begin_session(
             state.loading.store(false, Ordering::Release);
             if let Err(error) = result {
                 eprintln!("App startup failed: {error}");
-                let message = format!("无法读取登录信息或启动应用。\n{error}");
+                let message = format!("Could not read credentials or start the app.\n{error}");
                 if let Ok(mut failure) = state.error.lock() {
                     *failure = Some(message.clone());
                 }
@@ -227,6 +228,9 @@ fn handle(invoke: Invoke) -> bool {
         return true;
     }
     let handler: fn(Invoke) -> bool = tauri::generate_handler![
+        shortcuts::get_app_shortcuts,
+        shortcuts::set_app_shortcuts,
+        shortcuts::set_shortcut_capture,
         storage::load_key_press_count,
         storage::save_key_press_count,
         storage::load_cumulative_click_count,
@@ -258,6 +262,7 @@ pub fn run() {
                 .macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent)
                 .build(),
         )
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
@@ -266,6 +271,17 @@ pub fn run() {
         .manage(input::InputMonitor::new())
         .manage(socket::SocketState::default())
         .manage(region)
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) && matches!(window.label(), "panel" | "main") {
+                let app = window.app_handle().clone();
+                let label = window.label().to_owned();
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Err(error) = shortcuts::capture(&app, &label, false) {
+                        eprintln!("Could not restore shortcuts after window close: {error}");
+                    }
+                });
+            }
+        })
         .invoke_handler(handle);
     if region == profile::Region::Global {
         builder = builder.plugin(auth::plugin());
@@ -276,6 +292,7 @@ pub fn run() {
             app.manage(storage::CounterStore::new(
                 app.path().app_data_dir()?.join("counters.json"),
             ));
+            shortcuts::setup(&handle)?;
             menu::setup(&handle)?;
             app.manage(system::start_network_monitor(handle.clone())?);
             tauri::WebviewWindowBuilder::new(
@@ -328,7 +345,7 @@ pub fn run() {
             if let Some(mtm) = objc2::MainThreadMarker::new() {
                 let alert = objc2_app_kit::NSAlert::new(mtm);
                 alert.setMessageText(&objc2_foundation::NSString::from_str(
-                    "Wuwa Tappo Mac 无法启动",
+                    "Wuwa Tappo Mac could not start",
                 ));
                 alert.setInformativeText(&objc2_foundation::NSString::from_str(&error.to_string()));
                 alert.runModal();

@@ -14,7 +14,7 @@ export const assetsOrigin = cn.assetsOrigin;
 export function officialAssetUrl(value, profile = cn) {
   const url = new URL(value);
   if (url.origin !== profile.assetsOrigin || url.username || url.password || url.hash) {
-    throw new Error(`资源地址必须来自${profile.region === 'CN' ? '国服' : '国际服'}官方 HTTPS 域名。`);
+    throw new Error(`Asset URLs must use the official ${profile.label} HTTPS origin.`);
   }
   return url.href;
 }
@@ -23,36 +23,36 @@ export function parseManifest(manifest, manifestUrl, profile = cn) {
   officialAssetUrl(manifestUrl, profile);
   const version = manifest?.version;
   if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
-    throw new Error('官方版本号无效。');
+    throw new Error('Invalid official version number.');
   }
   const url = officialAssetUrl(manifest?.platforms?.['windows-x86_64']?.url, profile);
   if (new URL(url).pathname.split('/').at(-1) !== `WuwaTappo-${profile.id}_${version}_x64-setup.exe`) {
-    throw new Error(`官方清单必须提供与版本一致的${profile.region === 'CN' ? '国服' : '国际服'}安装包。`);
+    throw new Error(`The official manifest must provide a ${profile.label} installer matching its version.`);
   }
   const signature = manifest.platforms['windows-x86_64'].signature;
-  if (typeof signature !== 'string' || !signature.trim()) throw new Error('官方清单缺少安装包签名。');
+  if (typeof signature !== 'string' || !signature.trim()) throw new Error('The official manifest has no installer signature.');
   return { schemaVersion: 1, region: profile.region, version, manifestUrl, installer: { url, signature } };
 }
 
 export function validateLock(lock, profile = cn) {
-  if (lock?.schemaVersion !== 1 || lock.region !== profile.region) throw new Error(`资源锁必须是 schemaVersion 1 的 ${profile.region} 配置。`);
+  if (lock?.schemaVersion !== 1 || lock.region !== profile.region) throw new Error(`The resource lock must use schemaVersion 1 for ${profile.region}.`);
   parseManifest({ version: lock.version, platforms: { 'windows-x86_64': lock.installer } }, lock.manifestUrl, profile);
   if (!/^[a-f0-9]{64}$/.test(lock.installer.sha256) || !Number.isSafeInteger(lock.installer.size) || lock.installer.size <= 0) {
-    throw new Error('资源锁缺少有效的 SHA-256 或文件大小。');
+    throw new Error('The resource lock has no valid SHA-256 or file size.');
   }
   return lock;
 }
 
 export function verifyInstaller(bytes, lock, profile = cn) {
   validateLock(lock, profile);
-  if (bytes.length !== lock.installer.size) throw new Error(`${profile.region} 安装包大小不匹配，请重新下载锁定版本。`);
+  if (bytes.length !== lock.installer.size) throw new Error(`${profile.region} installer size mismatch. Download the pinned version again.`);
   const sha256 = createHash('sha256').update(bytes).digest('hex');
-  if (sha256 !== lock.installer.sha256) throw new Error(`${profile.region} 安装包 SHA-256 不匹配，已停止构建。`);
+  if (sha256 !== lock.installer.sha256) throw new Error(`${profile.region} installer SHA-256 mismatch. Build stopped.`);
   return { sha256, size: bytes.length };
 }
 
 export function compareUpstream(current, latest) {
-  if (current.region !== latest.region) throw new Error('不能比较不同服务器的资源锁。');
+  if (current.region !== latest.region) throw new Error('Cannot compare resource locks from different regions.');
   return {
     region: latest.region,
     regionId: latest.region.toLowerCase(),
@@ -91,19 +91,19 @@ export async function fetchOfficial(url, { fetcher = fetch, read = response => r
         continue;
       }
       const reason = causes.map(cause => `${cause.message}${cause.code ? ` (${cause.code})` : ''}`).join(' → ') || String(error);
-      throw new Error(`${stage || '读取官方资源'}失败：${url}；第 ${attempt} 次请求：${reason}`, { cause: error });
+      throw new Error(`${stage || 'Official resource request'} failed: ${url}; attempt ${attempt}: ${reason}`, { cause: error });
     }
   }
 }
 
 export async function discoverUpstream(fetcher = fetch, profile = cn) {
-  const config = await fetchOfficial(profile.configUrl, { fetcher, stage: `${profile.region} 活动配置` });
-  if (config.code !== 0 || typeof config.data?.assets_host !== 'string') throw new Error(`${profile.region} 活动配置无效。`);
+  const config = await fetchOfficial(profile.configUrl, { fetcher, stage: `${profile.region} activity configuration` });
+  if (config.code !== 0 || typeof config.data?.assets_host !== 'string') throw new Error(`Invalid ${profile.region} activity configuration.`);
   const host = officialAssetUrl(config.data.assets_host, profile);
-  if (new URL(host).pathname !== '/') throw new Error(`${profile.region} 资源根地址无效。`);
-  const pointer = await fetchOfficial(new URL(`/app/json-host/${profile.updaterHostFile}`, host).href, { fetcher, stage: `${profile.region} 版本指针` });
+  if (new URL(host).pathname !== '/') throw new Error(`Invalid ${profile.region} asset root URL.`);
+  const pointer = await fetchOfficial(new URL(`/app/json-host/${profile.updaterHostFile}`, host).href, { fetcher, stage: `${profile.region} version pointer` });
   const manifestUrl = officialAssetUrl(pointer.url, profile);
-  return parseManifest(await fetchOfficial(manifestUrl, { fetcher, stage: `${profile.region} 版本清单` }), manifestUrl, profile);
+  return parseManifest(await fetchOfficial(manifestUrl, { fetcher, stage: `${profile.region} version manifest` }), manifestUrl, profile);
 }
 
 async function exists(filename) {
@@ -115,9 +115,9 @@ export function findSevenZip(explicit, environment = process.env) {
   for (const candidate of [explicit, environment.SEVENZIP, '7zz', '7z'].filter(Boolean)) {
     const probe = spawnSync(candidate, ['i'], { encoding: 'utf8', maxBuffer: 1024 * 1024 });
     if (!probe.error && probe.status === 0) return candidate;
-    if (candidate === explicit || candidate === environment.SEVENZIP) throw new Error(`无法运行指定的 7-Zip：${candidate}`);
+    if (candidate === explicit || candidate === environment.SEVENZIP) throw new Error(`Could not run the specified 7-Zip: ${candidate}`);
   }
-  throw new Error('未找到 7-Zip。请先安装 7zip，或通过 --sevenzip /路径/7zz 指定。');
+  throw new Error('7-Zip not found. Install sevenzip or specify --sevenzip /path/to/7zz.');
 }
 
 function installerCachePath(url, work, profile) {
@@ -142,12 +142,12 @@ export function installerMirrorUrl(lock, profile = cn, environment = process.env
   const filename = installerMirrorAssetName(lock, profile);
   const repository = environment.GITHUB_REPOSITORY;
   if (environment.GITHUB_ACTIONS !== 'true' || environment.GITHUB_SERVER_URL !== 'https://github.com' || !/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(repository)) {
-    throw new Error('安装包镜像仅支持明确配置的本仓库 GitHub Actions 构建。');
+    throw new Error('Installer mirrors require an explicitly configured GitHub Actions build for this repository.');
   }
   const expected = `https://github.com/${repository}/releases/download/upstream-resources`;
   const base = new URL(environment.WUWA_INSTALLER_MIRROR_BASE);
   if (base.href.replace(/\/$/, '') !== expected || base.username || base.password || base.search || base.hash) {
-    throw new Error('安装包镜像必须是本仓库固定的 upstream-resources GitHub Release。');
+    throw new Error('The installer mirror must be this repository\'s pinned upstream-resources GitHub Release.');
   }
   return `${expected}/${encodeURIComponent(filename)}`;
 }
@@ -175,7 +175,7 @@ async function fetchInstallerMirror(url, fetcher) {
   } catch (error) {
     // Signed CDN query parameters must not appear in CI logs.
     const reason = errorDetails(error).map(cause => cause.status ? `HTTP ${cause.status}` : cause.code || cause.name).join(' → ');
-    throw new Error(`GitHub 安装包镜像下载失败：${url}；${reason}`, { cause: error });
+    throw new Error(`GitHub installer mirror download failed: ${url}; ${reason}`, { cause: error });
   }
 }
 
@@ -185,13 +185,13 @@ export async function downloadInstaller(lock, { profile = cn, updateLock = false
   let bytes;
   try {
     bytes = await fetchOfficial(lock.installer.url, {
-      stage: `${profile.region} 安装包下载`, timeout: 300_000, fetcher, sleep,
+      stage: `${profile.region} installer download`, timeout: 300_000, fetcher, sleep,
       read: async response => Buffer.from(await response.arrayBuffer()),
     });
   } catch (error) {
     if (updateLock || !environment.WUWA_INSTALLER_MIRROR_BASE || !mirrorEligibleFailure(error)) throw error;
     const mirror = installerMirrorUrl(lock, profile, environment);
-    log(`[${profile.region}] 官方安装包请求耗尽：${error.message}\n[${profile.region}] 使用显式构建源镜像（仍校验官方锁定大小及 SHA-256）：${mirror}`);
+    log(`[${profile.region}] Official installer requests exhausted: ${error.message}\n[${profile.region}] Using the configured build input mirror (official pinned size and SHA-256 are still verified): ${mirror}`);
     bytes = await fetchInstallerMirror(mirror, fetcher);
   }
   if (lock.installer.sha256) verifyInstaller(bytes, lock, profile);
@@ -235,7 +235,7 @@ export async function syncUpstream(options = {}, projectRoot = root) {
     const result = spawnSync(process.execPath, [path.join(projectRoot, 'scripts/extract-assets.mjs'),
       '--installer', filename, '--sevenzip', sevenzip, '--output', output], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
     if (result.error) throw result.error;
-    if (result.status !== 0) throw new Error(`${profile.region} 资源提取失败：${result.stderr.trim() || result.stdout.trim()}`);
+    if (result.status !== 0) throw new Error(`${profile.region} resource extraction failed: ${result.stderr.trim() || result.stdout.trim()}`);
     const extracted = JSON.parse(result.stdout);
     const hadFrontend = await exists(frontend);
     if (hadFrontend) await rename(frontend, backup);
@@ -255,12 +255,12 @@ export function parseOptions(args) {
     else if (arg === '--update-lock') options.updateLock = true;
     else if (arg === '--installer' || arg === '--sevenzip') {
       const value = args[++index];
-      if (!value || value.startsWith('--')) throw new Error(`${arg} 需要路径。`);
+      if (!value || value.startsWith('--')) throw new Error(`${arg} requires a path.`);
       options[arg.slice(2)] = value;
-    } else throw new Error(`未知参数：${arg}`);
+    } else throw new Error(`Unknown argument: ${arg}`);
   }
-  if (options.check && (options.updateLock || options.installer || options.sevenzip)) throw new Error('--check 只检查版本，不能与下载或提取参数同时使用。');
-  if (options.updateLock && options.installer) throw new Error('--update-lock 必须从官方地址下载，不能使用本地安装包。');
+  if (options.check && (options.updateLock || options.installer || options.sevenzip)) throw new Error('--check only checks versions and cannot be combined with download or extraction options.');
+  if (options.updateLock && options.installer) throw new Error('--update-lock must download from the official source; a local installer cannot be used.');
   return options;
 }
 

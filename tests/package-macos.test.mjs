@@ -23,7 +23,7 @@ test('packaging rejects incomplete arguments and missing application bundles', (
   assert.equal(incomplete.status, 2);
   const missing = spawnSync('bash', [script, '--app', '/nonexistent/Wuwa Tappo CN Mac.app'], { encoding: 'utf8' });
   assert.equal(missing.status, 1);
-  assert.match(missing.stderr, /未找到完整应用|需要在 Mac/);
+  assert.match(missing.stderr, /Complete app not found|must be generated on a Mac/);
 });
 
 test('packaging reports the failing stage and preserves the tool exit status', () => {
@@ -35,10 +35,10 @@ test('packaging reports the failing stage and preserves the tool exit status', (
     const result = spawnSync('bash', [script, '--app', app], { encoding: 'utf8' });
     assert.equal(result.status, 1);
     if (process.platform === 'darwin') {
-      assert.match(result.stdout, /打包阶段：读取应用信息/);
-      assert.match(result.stderr, /打包失败：读取应用信息（第 \d+ 行，退出状态 1）/);
+      assert.match(result.stdout, /Packaging phase: Read app information/);
+      assert.match(result.stderr, /Packaging failed: Read app information \(line \d+, exit status 1\)/);
     } else {
-      assert.match(result.stderr, /需要在 Mac/);
+      assert.match(result.stderr, /must be generated on a Mac/);
     }
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -48,7 +48,7 @@ test('packaging reports the failing stage and preserves the tool exit status', (
 test('packaging rejects unknown regions instead of silently choosing CN', () => {
   const result = spawnSync('bash', [script], { encoding: 'utf8', env: { ...process.env, WUWA_REGION: 'unknown' } });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /未知服务区域/);
+  assert.match(result.stderr, /Unknown service region/);
 });
 
 test('both regions reject an application bundle from the other region before reading its binary', () => {
@@ -71,10 +71,10 @@ test('both regions reject an application bundle from the other region before rea
       const result = spawnSync('bash', [script, '--app', app], { encoding: 'utf8', env: { ...process.env, WUWA_REGION: region } });
       assert.equal(result.status, 1);
       if (process.platform === 'darwin') {
-        assert.ok(result.stderr.includes(`与${profile.label}构建配置不一致`));
-        assert.ok(!result.stdout.includes('检查架构与签名'));
+        assert.ok(result.stderr.includes(`does not match the ${profile.label} build configuration`));
+        assert.ok(!result.stdout.includes('Check architecture and signature'));
       } else {
-        assert.match(result.stderr, /需要在 Mac/);
+        assert.match(result.stderr, /must be generated on a Mac/);
       }
     }
   } finally {
@@ -98,16 +98,16 @@ test('package resource validation rejects mixed-region frontend and embedded ent
     for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) writeFileSync(path.join(contents, 'Resources', name), 'notice');
     const binary = path.join(contents, 'MacOS/wuwatappo-mac');
     writeFileSync(binary, '/index.html\0/assets/cn.js\0/app-icon.png');
-    const run = () => spawnSync(process.execPath, ['--input-type=module', '-e', validation, directory, binary, 'build/frontend-global', 'GLOBAL', '国际服'], { encoding: 'utf8' });
+    const run = () => spawnSync(process.execPath, ['--input-type=module', '-e', validation, directory, binary, 'build/frontend-global', 'GLOBAL', 'Global'], { encoding: 'utf8' });
     const mixed = run();
     assert.equal(mixed.status, 1);
-    assert.match(mixed.stderr, /未嵌入必要资源：\/assets\/global.js/);
+    assert.match(mixed.stderr, /is missing required embedded resource: \/assets\/global.js/);
     writeFileSync(binary, '/index.html\0/assets/global.js\0/app-icon.png');
     assert.equal(run().status, 0);
     writeFileSync(path.join(prepared, 'global.js'), 'const APP_REGION="CN";');
     const wrongFrontend = run();
     assert.equal(wrongFrontend.status, 1);
-    assert.match(wrongFrontend.stderr, /必须使用国际服前端/);
+    assert.match(wrongFrontend.stderr, /must use the Global frontend/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

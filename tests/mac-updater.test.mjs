@@ -43,7 +43,7 @@ test('an existing update host needs no additional config request', async () => {
 test('missing or local-only config is an explicit failure', async () => {
   for (const host of ['', '__local_role_assets__']) {
     const context = runtime('', { data: { assets_host: host } });
-    await assert.rejects(context.api.resolveUpdaterLatestJsonUrl(), /官方配置缺少更新资源地址/);
+    await assert.rejects(context.api.resolveUpdaterLatestJsonUrl(), /The official configuration has no update asset URL/);
   }
 });
 

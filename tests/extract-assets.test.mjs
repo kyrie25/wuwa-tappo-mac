@@ -120,3 +120,28 @@ test('all static references in the recovered production frontend exist', async (
   assert.deepEqual(result.missing, []);
   assert.ok(result.references.length > 100);
 });
+
+test('installer extraction finds a renamed NSIS runtime by its Tauri assets', async () => {
+  const { extractInstallerPayload } = await import('../scripts/extract-assets.mjs');
+  const stub = fixture([['/index.html', '<html/>']]);
+  const installer = Buffer.concat([stub, Buffer.alloc(64)]);
+  Buffer.from('\xef\xbe\xad\xdeNullsoftInst', 'latin1').copy(installer, stub.length + 4);
+  installer.writeUInt32LE(64, stub.length + 24);
+  for (const name of ['WuwaTappo.exe', '$_21_', 'RenamedTappo.exe']) {
+    const calls = [];
+    const recovered = await extractInstallerPayload(installer, '7zz', (_, args) => {
+      calls.push(args);
+      if (args[0] === 'l') return { status: 0, stdout: `Path = /tmp/setup.exe\nPath = $PLUGINSDIR/System.dll\nPath = uninstall.exe\nPath = helper.exe\nPath = ${name}\n` };
+      return { status: 0, stdout: args.at(-1) === name ? stub : Buffer.from('not a frontend') };
+    });
+    assert.deepEqual(recovered, stub);
+    assert.equal(calls.length, 3);
+    assert.ok(calls.slice(1).every(args => args.includes('-so') && args.includes('-spd')));
+  }
+  for (const count of [0, 2]) {
+    await assert.rejects(extractInstallerPayload(installer, '7zz', (_, args) => args[0] === 'l'
+      ? { status: 0, stdout: ['first.exe', 'second.exe'].slice(0, count).map(name => `Path = ${name}`).join('\n') }
+      : { status: 0, stdout: stub }), /Expected one embedded Tauri application/);
+  }
+  await assert.rejects(extractInstallerPayload(installer, '7zz', () => ({ status: 2, stderr: 'corrupt archive' })), /7-Zip listing failed/);
+});

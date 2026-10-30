@@ -73,7 +73,7 @@ test('truncated or same-size tampered mirror content fails the official pin', as
     await assert.rejects(downloadInstaller(lock, { ...downloadOptions, fetcher: async url => {
       if (url === lock.installer.url) throw timeout();
       return response(payload);
-    } }), /大小不匹配|SHA-256 不匹配/);
+    } }), /size mismatch|SHA-256 mismatch/);
   }
 });
 
@@ -90,13 +90,13 @@ test('HTTP 4xx, certificates and successful-but-corrupt official responses never
     assert.deepEqual(urls, [lock.installer.url]);
   }
   const urls = [];
-  await assert.rejects(downloadInstaller(lock, { ...downloadOptions, fetcher: async url => { urls.push(url); return response(Buffer.alloc(bytes.length)); } }), /SHA-256 不匹配/);
+  await assert.rejects(downloadInstaller(lock, { ...downloadOptions, fetcher: async url => { urls.push(url); return response(Buffer.alloc(bytes.length)); } }), /SHA-256 mismatch/);
   assert.deepEqual(urls, [lock.installer.url]);
 });
 
 test('an absent mirror preserves legacy failure and official success does not access mirror', async () => {
   const lock = fixtureLock(), urls = [];
-  await assert.rejects(downloadInstaller(lock, { ...downloadOptions, environment: {}, fetcher: async url => { urls.push(url); throw timeout(); } }), /第 3 次请求.*UND_ERR_CONNECT_TIMEOUT/);
+  await assert.rejects(downloadInstaller(lock, { ...downloadOptions, environment: {}, fetcher: async url => { urls.push(url); throw timeout(); } }), /attempt 3.*UND_ERR_CONNECT_TIMEOUT/);
   assert.deepEqual(urls, [lock.installer.url, lock.installer.url, lock.installer.url]);
   urls.length = 0;
   assert.deepEqual(await downloadInstaller(lock, { ...downloadOptions, fetcher: async url => { urls.push(url); return response(bytes); } }), bytes);
@@ -108,7 +108,7 @@ test('unlocked discovery or update cannot acquire its pin from the mirror', asyn
   let count = 0;
   await assert.rejects(downloadInstaller(unpinned, { ...downloadOptions, fetcher: async () => { count += 1; return response(bytes); } }), /SHA-256/);
   assert.equal(count, 0);
-  await assert.rejects(downloadInstaller({ ...unpinned, installer: { ...unpinned.installer, url: 'https://example.com/WuwaTappo-cn_1.0.2_x64-setup.exe' } }, { ...downloadOptions, updateLock: true, fetcher: async () => { count += 1; return response(bytes); } }), /官方 HTTPS/);
+  await assert.rejects(downloadInstaller({ ...unpinned, installer: { ...unpinned.installer, url: 'https://example.com/WuwaTappo-cn_1.0.2_x64-setup.exe' } }, { ...downloadOptions, updateLock: true, fetcher: async () => { count += 1; return response(bytes); } }), /official.*HTTPS/);
   assert.equal(count, 0);
   for (const candidate of [lock, unpinned]) {
     const urls = [];
@@ -133,7 +133,7 @@ test('mirror redirects are restricted to one HTTPS GitHub asset hop and errors n
     if (url === lock.installer.url) throw timeout();
     if (url === cdn) throw new TypeError(`failure at ${cdn}`);
     return { status: 302, headers: new Headers({ location: cdn }) };
-  } }), error => error.message.includes('GitHub 安装包镜像下载失败') && !error.message.includes('secret=query'));
+  } }), error => error.message.includes('GitHub installer mirror download failed') && !error.message.includes('secret=query'));
 });
 
 test('mirror publishing verifies the local pin and reuses only matching immutable server digests', async () => {
@@ -149,7 +149,7 @@ test('mirror publishing verifies the local pin and reuses only matching immutabl
       const calls = [];
       const publish = () => publishPinnedInstaller({ projectRoot: directory, profile: getRegionProfile('cn'), environment, execute: (command, args) => { calls.push([command, args]); return releaseResponse([existing]); } });
       if (existing === matching) assert.equal((await publish()).reused, true);
-      else await assert.rejects(publish(), /官方锁不一致/);
+      else await assert.rejects(publish(), /official lock/);
       assert.equal(calls.length, 1);
     }
     const calls = [];
@@ -168,7 +168,7 @@ test('mirror publishing verifies the local pin and reuses only matching immutabl
     assert.equal(calls.length, 3);
     assert.deepEqual(await readFile(path.join(directory, '.work/installer-mirror', name)), bytes);
     await writeFile(source, Buffer.alloc(bytes.length));
-    await assert.rejects(publishPinnedInstaller({ projectRoot: directory, profile: getRegionProfile('cn'), environment, execute: () => assert.fail('tampered source must fail before GitHub writes') }), /SHA-256 不匹配/);
+    await assert.rejects(publishPinnedInstaller({ projectRoot: directory, profile: getRegionProfile('cn'), environment, execute: () => assert.fail('tampered source must fail before GitHub writes') }), /SHA-256 mismatch/);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 

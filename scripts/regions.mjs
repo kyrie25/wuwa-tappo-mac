@@ -1,6 +1,6 @@
 const profiles = {
   cn: {
-    id: 'cn', region: 'CN', label: '国服',
+    id: 'cn', region: 'CN', label: 'CN',
     configUrl: 'https://api-mc-wuwatappo.kurogames-global.com/api/common/activity-config',
     assetsOrigin: 'https://mc-wuwatappo.kurogames-global.com',
     updaterHostFile: 'latest_host.json',
@@ -10,7 +10,7 @@ const profiles = {
     artifactPrefix: 'WuwaTappo-CN-Mac',
   },
   global: {
-    id: 'global', region: 'GLOBAL', label: '国际服',
+    id: 'global', region: 'GLOBAL', label: 'Global',
     configUrl: 'https://api-wutheringwaves-wuwatappo.kurogames-global.com/api/common/activity-config',
     assetsOrigin: 'https://wutheringwaves-wuwatappo.kurogames-global.com',
     updaterHostFile: 'latest-global_host.json',
@@ -22,6 +22,6 @@ const profiles = {
 };
 
 export function getRegionProfile(id = process.env.WUWA_REGION || 'cn') {
-  if (!Object.hasOwn(profiles, id)) throw new Error(`未知服务区域：${id}，请选择 cn 或 global。`);
+  if (!Object.hasOwn(profiles, id)) throw new Error(`Unknown service region: ${id}. Choose cn or global.`);
   return profiles[id];
 }

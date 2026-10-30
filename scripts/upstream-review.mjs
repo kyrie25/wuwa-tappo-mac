@@ -54,12 +54,12 @@ export function updatePullRequestArguments({ profile, version, branch, runUrl, o
   const validated = reviewStages.every(stage => outcomes[stage] === 'success');
   const results = [...reviewStages, ...(outcomes.mirror === undefined ? [] : ['mirror'])].map(stage => `- ${stage}: ${outcomes[stage] || 'skipped'}`).join('\n');
   const body = [
-    `${profile.label}官方资源锁定更新至 ${version}，不修改另一个地区。`,
-    validated ? '资源检查、契约测试、Rust 测试、原生构建和 ZIP/DMG 打包均已通过。请完成真人登录、输入权限和联机检查后再合并发布。' : '候选版本尚未通过兼容性验证。此 PR 保持草稿，需要审核接口变化、修复失败项并通过两服 CI 后再合并。',
+    `Pin official ${profile.label} resources to ${version}. The other region is unchanged.`,
+    validated ? 'Resource checks, contract tests, Rust tests, native build and ZIP/DMG packaging passed. Verify real account login, input permissions and multiplayer before merging and releasing.' : 'This candidate has not passed compatibility validation. Keep this PR as a draft until interface changes are reviewed, failures are fixed and CI passes for both regions.',
     results,
-    `运行、失败日志及 observed inventory / 契约差异：[Actions](${runUrl})。审阅资料：official-${profile.id}-review；完整验证通过后的安装包：official-${profile.id}-candidate。`,
+    `Run, failure logs, observed inventory and contract differences: [Actions](${runUrl}). Review evidence: official-${profile.id}-review; packages after full validation: official-${profile.id}-candidate.`,
   ].join('\n\n');
-  return ['pr', 'create', '--base', 'main', '--head', branch, '--title', `同步${profile.label}官方资源 ${version}`, '--body', body, ...(validated ? [] : ['--draft'])];
+  return ['pr', 'create', '--base', 'main', '--head', branch, '--title', `Sync official ${profile.label} resources ${version}`, '--body', body, ...(validated ? [] : ['--draft'])];
 }
 
 export async function openUpdatePullRequest({ projectRoot = root, profile = getRegionProfile(), environment = process.env, execute = execFileSync } = {}) {
@@ -81,11 +81,11 @@ export async function openUpdatePullRequest({ projectRoot = root, profile = getR
 }
 
 export function reportFailure({ profile = getRegionProfile(), environment = process.env, execute = execFileSync } = {}) {
-  const title = `${profile.label}官方同步需要处理`;
+  const title = `Official ${profile.label} synchronization needs attention`;
   const issues = JSON.parse(execute('gh', ['issue', 'list', '--state', 'open', '--search', `${title} in:title`, '--limit', '100', '--json', 'number,title'], { encoding: 'utf8' }));
   const number = exactIssueNumber(issues, title);
   const runUrl = `https://github.com/${environment.GITHUB_REPOSITORY}/actions/runs/${environment.GITHUB_RUN_ID}`;
-  const body = `${profile.label}官方同步或兼容性验证失败，未发布新版本。具体失败步骤、日志和可用审阅资料：${runUrl}`;
+  const body = `Official ${profile.label} synchronization or compatibility validation failed. No new version was released. Failed steps, logs and available review evidence: ${runUrl}`;
   execute('gh', number === null ? ['issue', 'create', '--title', title, '--body', body] : ['issue', 'comment', String(number), '--body', body], { stdio: 'inherit' });
 }
 

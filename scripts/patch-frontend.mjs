@@ -1,4 +1,4 @@
-export function patchSessionBarriers(source) {
+export function patchSessionBarriers(source, expected = 2) {
   let changes = 0;
   const patched = source.replace(
     /async function (invoke(?:\$\d+)?)\(e,t=\{\},n\)\{return window\.__TAURI_INTERNALS__\.invoke\(e,t,n\)\}/g,
@@ -7,7 +7,7 @@ export function patchSessionBarriers(source) {
       return `async function ${name}(e,t={},n){if(e==="open_login_window"||e==="open_panel_window"||e==="plugin:event|emit"&&(t.event==="cat-auth-login-success"||t.event==="cat-auth-logout"))await window.__WUWATAPPO_SESSION__?.flush();return window.__TAURI_INTERNALS__.invoke(e,t,n)}`;
     },
   );
-  if (changes !== 2) throw new Error(`Expected 2 original Tauri invoke wrappers, found ${changes}. Reconcile the app version before building.`);
+  if (changes !== expected) throw new Error(`Expected ${expected} original Tauri invoke wrappers, found ${changes}. Reconcile the app version before building.`);
   return patched;
 }
 
@@ -52,15 +52,15 @@ export function patchDomesticLoginReload(source) {
 }
 
 export function patchMacUpdateFeedback(source) {
-  const pattern = /if\(([$\w]+)\.kind==="error"\)\{([^{}]*?)([$\w]+)\.value=n\("setting_version_check_failed"\);return\}/g;
+  const pattern = /if\(([$\w]+)\.kind==="error"\)\{([^{}]*?)([$\w]+)\.value=([$\w]+)\("setting_version_check_failed"\);return\}/g;
   const matches = [...source.matchAll(pattern)];
   if (matches.length !== 1) throw new Error('Original update feedback changed; reconcile the Mac update message before building.');
-  return source.replace(pattern, (_, error, before, target) => `if(${error}.kind==="error"){${before}${target}.value=${error}.message||n("setting_version_check_failed");return}`);
+  return source.replace(pattern, (_, error, before, target, translate) => `if(${error}.kind==="error"){${before}${target}.value=${error}.message||${translate}("setting_version_check_failed");return}`);
 }
 
 export function patchMacUpdater(source) {
   const resolver = 'async function resolveUpdaterLatestJsonUrl(){const e=resolveUpdaterLatestHostJsonUrl();if(!e)return null;';
-  const recovery = 'async function resolveUpdaterLatestJsonUrl(){let e=resolveUpdaterLatestHostJsonUrl();if(!e){const config=unwrapApiData(await activityInfo());const host=typeof config?.assets_host==="string"?config.assets_host.trim():"";if(!host||host===LOCAL_ROLE_ASSETS_HOST)throw new Error("官方配置缺少更新资源地址");setUpdaterAssetsHost(host,{triggerSilentCheck:!1});e=resolveUpdaterLatestHostJsonUrl()}';
+  const recovery = 'async function resolveUpdaterLatestJsonUrl(){let e=resolveUpdaterLatestHostJsonUrl();if(!e){const config=unwrapApiData(await activityInfo());const host=typeof config?.assets_host==="string"?config.assets_host.trim():"";if(!host||host===LOCAL_ROLE_ASSETS_HOST)throw new Error("The official configuration has no update asset URL");setUpdaterAssetsHost(host,{triggerSilentCheck:!1});e=resolveUpdaterLatestHostJsonUrl()}';
   const failure = 'if(logDiagnostic("UPDATE","check_failed",{stage:"check",reason_code:diagnosticErrorCode(t),fallback:e?.interactive?"report_error":"treat_as_latest"},"warn"),e?.interactive)return{kind:"error",message:n};try{const s=await getVersion();return console.warn("[updater] check skipped (treat as latest)",t),{kind:"none",currentVersion:s}}catch{return{kind:"error",message:n}}';
   const report = 'return logDiagnostic("UPDATE","check_failed",{stage:"check",reason_code:diagnosticErrorCode(t),fallback:"report_error"},"warn"),{kind:"error",message:n}';
   for (const original of [resolver, failure]) {
@@ -78,11 +78,12 @@ export function patchMacAbout(source, region = 'CN') {
   const [remote, computed] = remotes[0];
   const info = region === 'GLOBAL'
     ? `<h2 ${scope}>macOS community build</h2><p ${scope}>Wuwa Tappo Global Mac · Unofficial · Apple Silicon · macOS 13+</p>`
-    : `<h2 ${scope}>macOS 重建版</h2><p ${scope}>Wuwa Tappo CN Mac · 非官方重建 · Apple Silicon · macOS 13 及以上</p>`;
+    : `<h2 ${scope}>macOS community build</h2><p ${scope}>Wuwa Tappo CN Mac · Unofficial · Apple Silicon · macOS 13+</p>`;
   const banner = `<section class="about-section" ${scope}>${info}</section>`;
   return source
-    .replace(original, `${info}<h3 ${scope}>Windows 原版系统配置</h3>`)
-    .replace(remote, `t=${computed}(()=>{const html=k("about_content")?String(v("about_content")).trim():"";return html?${JSON.stringify(banner)}+html.replace("系统配置","Windows 原版系统配置").replace("系統配備","Windows 原版系統配備"):""})`);
+    .replace(original, `${info}<h3 ${scope}>Original Windows requirements</h3>`)
+    .replace(/<h2 (data-v-[a-f0-9]+)>(?:System Requirements|Device Requirements)<\/h2>/g, `${info}<h3 ${scope}>Original Windows requirements</h3>`)
+    .replace(remote, `t=${computed}(()=>{const html=k("about_content")?String(v("about_content")).trim():"";return html&&!/\\p{Script=Han}/u.test(html)?${JSON.stringify(banner)}+html.replace("系统配置","Original Windows requirements").replace("系統配備","Original Windows requirements").replace("System Requirements","Original Windows requirements").replace("Device Requirements","Original Windows requirements"):""})`);
 }
 
 export function patchGlobalAuthListener(source) {

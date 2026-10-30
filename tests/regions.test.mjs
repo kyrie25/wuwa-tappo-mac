@@ -30,9 +30,9 @@ test('Global has separate inputs, prepared resources, icon output and applicatio
 
 test('unknown regions fail rather than silently selecting an account environment', () => {
   for (const region of ['CN', 'international', '', '__proto__', 'constructor']) {
-    assert.throws(() => getRegionProfile(region), /未知服务区域/);
+    assert.throws(() => getRegionProfile(region), /Unknown service region/);
   }
-  assert.throws(() => tauriArguments('install', getRegionProfile('cn')), /未知构建操作/);
+  assert.throws(() => tauriArguments('install', getRegionProfile('cn')), /Unknown build action/);
 });
 
 test('Rust test entry point applies Global configuration without changing existing CN overrides', async () => {

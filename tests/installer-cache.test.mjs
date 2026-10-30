@@ -29,7 +29,7 @@ test('installer Actions cache identity is exact region, content digest and size 
     assert.notEqual(pinnedInstallerCache({ ...lock, installer: { ...lock.installer, sha256: '0'.repeat(64) } }, '/project', profile).key, cache.key);
     assert.notEqual(pinnedInstallerCache({ ...lock, installer: { ...lock.installer, url: lock.installer.url.replace('/release/', '/republished/') } }, '/project', profile).key, cache.key);
     assert.throws(() => pinnedInstallerCache({ ...lock, installer: { ...lock.installer, sha256: undefined } }, '/project', profile), /SHA-256/);
-    assert.throws(() => pinnedInstallerCache({ ...lock, installer: { ...lock.installer, url: lock.installer.url.replace(profile.assetsOrigin, 'https://example.com') } }, '/project', profile), /官方 HTTPS/);
+    assert.throws(() => pinnedInstallerCache({ ...lock, installer: { ...lock.installer, url: lock.installer.url.replace(profile.assetsOrigin, 'https://example.com') } }, '/project', profile), /official.*HTTPS/);
     assert.throws(() => pinnedInstallerCache(lock, '/project', getRegionProfile(region === 'cn' ? 'global' : 'cn')));
   }
 });
@@ -78,7 +78,7 @@ test('restored installers avoid network but remain size and digest verified befo
     for (const corrupt of [bytes.subarray(1), Buffer.alloc(bytes.length)]) {
       await rm(path.join(directory, 'frontend'), { recursive: true, force: true });
       await writeFile(cache.path, corrupt);
-      await assert.rejects(syncUpstream({ sevenzip }, directory), /大小不匹配|SHA-256 不匹配/);
+      await assert.rejects(syncUpstream({ sevenzip }, directory), /size mismatch|SHA-256 mismatch/);
       await assert.rejects(access(path.join(directory, 'frontend')), { code: 'ENOENT' });
     }
     await rm(cache.path);
@@ -94,7 +94,7 @@ test('restored installers avoid network but remain size and digest verified befo
     await rm(cache.path);
     await rm(path.join(directory, 'frontend'), { recursive: true });
     globalThis.fetch = async () => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('official connect timeout'), { code: 'UND_ERR_CONNECT_TIMEOUT' }) }); };
-    await assert.rejects(syncUpstream({ sevenzip }, directory), error => error.message.includes(lock.installer.url) && error.message.includes('CN 安装包下载') && error.message.includes('第 3 次请求') && error.message.includes('UND_ERR_CONNECT_TIMEOUT'));
+    await assert.rejects(syncUpstream({ sevenzip }, directory), error => error.message.includes(lock.installer.url) && error.message.includes('CN installer download') && error.message.includes('attempt 3') && error.message.includes('UND_ERR_CONNECT_TIMEOUT'));
     await assert.rejects(access(cache.path), { code: 'ENOENT' });
     await assert.rejects(access(path.join(directory, 'frontend')), { code: 'ENOENT' });
   } finally {

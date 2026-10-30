@@ -126,6 +126,34 @@ export async function extractAssets(bytes, output) {
   return entries.map(({ data, ...entry }) => ({ ...entry, size: data.length }));
 }
 
+// NSIS can store a runtime under an unresolved variable name (for example $_21_).
+// Identify the embedded Tauri frontend instead of assuming a product filename.
+export async function extractInstallerPayload(installer, sevenzip, execute = spawnSync) {
+  const bounds = findEmbeddedNsis(installer);
+  const temporary = await mkdtemp(path.join(tmpdir(), 'wuwatappo-extract-'));
+  try {
+    const filename = path.join(temporary, 'setup.exe');
+    await writeFile(filename, installer.subarray(bounds.start, bounds.end));
+    const listing = execute(sevenzip, ['l', '-slt', filename], { encoding: 'utf8', maxBuffer: 1024 * 1024 });
+    if (listing.error) throw listing.error;
+    if (listing.status !== 0) throw new Error(`7-Zip listing failed: ${listing.stderr || listing.stdout}`);
+    const candidates = [...listing.stdout.matchAll(/^Path = (.+)$/gm)].map(match => match[1].trim())
+      .filter(name => !/[\\/]/.test(name) && !/^uninstall\.exe$/i.test(name)
+        && (/\.exe$/i.test(name) || /^\$_\d+_$/.test(name)));
+    const payloads = [];
+    for (const name of candidates) {
+      // Read into memory; archive paths are never used as output paths.
+      const result = execute(sevenzip, ['e', '-so', '-bd', '-spd', filename, name], { maxBuffer: 256 * 1024 * 1024 });
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error(`7-Zip extraction failed for ${name}: ${result.stderr}`);
+      try { findAssetEntries(result.stdout); } catch { continue; }
+      payloads.push(result.stdout);
+    }
+    if (payloads.length !== 1) throw new Error(`Expected one embedded Tauri application, found ${payloads.length}. Review the official installer layout.`);
+    return payloads[0];
+  } finally { await rm(temporary, { recursive: true, force: true }); }
+}
+
 function staticReferences(source, extension) {
   const values = [];
   if (extension === '.html') {
@@ -173,19 +201,7 @@ async function main() {
   if (options.payload) bytes = await readFile(options.payload);
   else {
     if (!options.sevenzip) throw new Error('--installer requires --sevenzip; the installer is never executed.');
-    const installer = await readFile(options.installer);
-    const bounds = findEmbeddedNsis(installer);
-    const temporary = await mkdtemp(path.join(tmpdir(), 'wuwatappo-extract-'));
-    try {
-      const filename = path.join(temporary, 'setup.exe');
-      await writeFile(filename, installer.subarray(bounds.start, bounds.end));
-      const result = spawnSync(options.sevenzip, ['e', '-y', '-bd', `-o${temporary}`, filename, 'WuwaTappo.exe'], {
-        encoding: 'utf8', maxBuffer: 1024 * 1024,
-      });
-      if (result.error) throw result.error;
-      if (result.status !== 0) throw new Error(`7-Zip extraction failed: ${result.stderr || result.stdout}`);
-      bytes = await readFile(path.join(temporary, 'WuwaTappo.exe'));
-    } finally { await rm(temporary, { recursive: true, force: true }); }
+    bytes = await extractInstallerPayload(await readFile(options.installer), options.sevenzip);
   }
   const entries = findAssetEntries(bytes);
   const references = inspectStaticReferences(entries);

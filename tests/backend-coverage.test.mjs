@@ -8,7 +8,7 @@ const root = new URL('../', import.meta.url);
 import { contract } from './frontend-context.mjs';
 
 test('every application runtime command has a macOS handler', async () => {
-  const modules = ['lib', 'windows', 'storage', 'input', 'system'];
+  const modules = ['lib', 'windows', 'storage', 'input', 'system', 'shortcuts'];
   const implementation = (await Promise.all(modules.map(name => readFile(new URL(`src-tauri/src/${name}.rs`, root), 'utf8')))).join('\n');
   const missing = contract.commands.filter(c => c.kind === 'application' && c.scopes.includes('application-runtime'))
     .filter(c => !implementation.includes(`"${c.name}"`) && !implementation.includes(`fn ${c.name}(`))
@@ -52,22 +52,29 @@ test('Mac update feedback preserves the native platform explanation', () => {
   assert.throws(() => patchMacUpdateFeedback(''), /update feedback changed/);
 });
 
+test('Mac update feedback follows changed minifier aliases in official 1.0.3', () => {
+  assert.equal(patchMacUpdateFeedback('if(_.kind==="error"){wt("check_failed"),le.value=t("setting_version_check_failed");return}'), 'if(_.kind==="error"){wt("check_failed"),le.value=_.message||t("setting_version_check_failed");return}');
+  const wrapper = 'async function invoke(e,t={},n){return window.__TAURI_INTERNALS__.invoke(e,t,n)}';
+  assert.ok(patchSessionBarriers(wrapper, 1).includes('SESSION__?.flush()'));
+  assert.throws(() => patchSessionBarriers(wrapper, 2), /Expected 2/);
+});
+
 test('About separates the Mac build target from official Windows requirements', () => {
   const patched = patchMacAbout('t=b(()=>k("about_content")?String(v("about_content")).trim():"");<h2 data-v-439444c8>系统配置</h2>');
   assert.ok(patched.includes('Apple Silicon'));
-  assert.ok(patched.includes('Windows 原版系统配置'));
-  assert.ok(patched.includes('html.replace("系统配置","Windows 原版系统配置")'));
+  assert.ok(patched.includes('Original Windows requirements'));
+  assert.ok(patched.includes('html.replace("系统配置","Original Windows requirements")'));
   assert.throws(() => patchMacAbout(''), /About system section changed/);
 });
 
-test('traditional Chinese remote About requirements remain identified as Windows', () => {
+test('remote About keeps English Mac information and falls back to bundled content for Chinese', () => {
   const source = 'let t=f(()=>k("about_content")?String(v("about_content")).trim():"");<h2 data-v-160f56ac>系统配置</h2>';
   const patched = patchMacAbout(source, 'GLOBAL');
-  const result = vm.runInNewContext(patched.slice(0, patched.indexOf(';<h2')) + ';t', {
-    f: callback => callback(), k: () => true,
-    v: () => '<h2>系統配備</h2><p>Windows 10 / Windows 11 64位元</p>',
+  const evaluate = html => vm.runInNewContext(patched.slice(0, patched.indexOf(';<h2')) + ';t', {
+    f: callback => callback(), k: () => true, v: () => html,
   });
+  const result = evaluate('<h2>System Requirements</h2><p>Windows 10 / Windows 11 64-bit</p>');
   assert.ok(result.includes('Wuwa Tappo Global Mac'));
-  assert.ok(result.includes('<h2>Windows 原版系統配備</h2>'));
-  assert.ok(result.includes('Windows 10 / Windows 11 64位元'));
+  assert.ok(result.includes('<h2>Original Windows requirements</h2>'));
+  assert.equal(evaluate('<h2>系統配備</h2>'), '');
 });

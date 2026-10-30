@@ -60,7 +60,7 @@ test('an update is ready only when every required compatibility and packaging st
     const outcomes = Object.fromEntries(['inventory', 'frontend', 'native', 'build', 'package'].map(stage => [stage, 'success']));
     const args = updatePullRequestArguments({ profile, version: '1.0.2', branch: 'codex/candidate', runUrl: 'https://github.com/owner/repo/actions/runs/1', outcomes });
     assert.ok(!args.includes('--draft'));
-    assert.ok(args.includes(`同步${profile.label}官方资源 1.0.2`));
+    assert.ok(args.includes(`Sync official ${profile.label} resources 1.0.2`));
     assert.ok(args[args.indexOf('--body') + 1].includes(`official-${region}-review`));
     const mirrorFailed = updatePullRequestArguments({ profile, version: '1.0.2', branch: 'codex/candidate', runUrl: 'run', outcomes: { ...outcomes, mirror: 'failure' } });
     assert.ok(mirrorFailed[mirrorFailed.indexOf('--body') + 1].includes('mirror: failure'));
@@ -69,16 +69,16 @@ test('an update is ready only when every required compatibility and packaging st
       assert.ok(draft.includes('--draft'), `${region} ${stage} ${result}`);
       const body = draft[draft.indexOf('--body') + 1];
       assert.ok(body.includes(`${stage}: ${result || 'skipped'}`));
-      assert.ok(body.includes('尚未通过兼容性验证'));
+      assert.ok(body.includes('has not passed compatibility validation'));
     }
   }
 });
 
 test('failure reports select only the exact regional issue title', () => {
-  const issues = [{ number: 1, title: '国际服官方同步需要处理' }, { number: 2, title: '国服官方同步需要处理：旧问题' }, { number: 3, title: '国服官方同步需要处理' }];
-  assert.equal(exactIssueNumber(issues, '国际服官方同步需要处理'), 1);
-  assert.equal(exactIssueNumber(issues, '国服官方同步需要处理'), 3);
-  assert.equal(exactIssueNumber(issues.slice(0, 2), '国服官方同步需要处理'), null);
+  const issues = [{ number: 1, title: 'Official Global synchronization needs attention' }, { number: 2, title: 'Official CN synchronization needs attention: old issue' }, { number: 3, title: 'Official CN synchronization needs attention' }];
+  assert.equal(exactIssueNumber(issues, 'Official Global synchronization needs attention'), 1);
+  assert.equal(exactIssueNumber(issues, 'Official CN synchronization needs attention'), 3);
+  assert.equal(exactIssueNumber(issues.slice(0, 2), 'Official CN synchronization needs attention'), null);
 });
 
 test('update PR execution commits only its regional lock, selects draft after failure, and does nothing without a diff', async () => {
@@ -112,11 +112,11 @@ test('failure report execution creates CN issue instead of commenting on a fuzzy
     const calls = [];
     reportFailure({ profile: getRegionProfile('cn'), environment: { GITHUB_REPOSITORY: 'owner/repo', GITHUB_RUN_ID: '123' }, execute: (command, args) => {
       calls.push([command, args]);
-      return JSON.stringify([{ number: 1, title: '国际服官方同步需要处理' }, ...(matching ? [{ number: 2, title: '国服官方同步需要处理' }] : [])]);
+      return JSON.stringify([{ number: 1, title: 'Official Global synchronization needs attention' }, ...(matching ? [{ number: 2, title: 'Official CN synchronization needs attention' }] : [])]);
     } });
     assert.equal(calls.length, 2);
     assert.equal(calls.at(-1)[1][1], matching ? 'comment' : 'create');
-    assert.ok(calls.at(-1)[1].includes(matching ? '2' : '国服官方同步需要处理'));
+    assert.ok(calls.at(-1)[1].includes(matching ? '2' : 'Official CN synchronization needs attention'));
   }
 });
 

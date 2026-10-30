@@ -1,54 +1,56 @@
 # Wuwa Tappo · macOS
 
-[![构建](https://github.com/Last-emo-boy/wuwa-tappo-mac/actions/workflows/ci.yml/badge.svg)](https://github.com/Last-emo-boy/wuwa-tappo-mac/actions/workflows/ci.yml)
-[![下载](https://img.shields.io/github/v/release/Last-emo-boy/wuwa-tappo-mac?label=下载)](https://github.com/Last-emo-boy/wuwa-tappo-mac/releases/latest)
+[![Build](https://github.com/kyrie25/wuwa-tappo-mac/actions/workflows/ci.yml/badge.svg)](https://github.com/kyrie25/wuwa-tappo-mac/actions/workflows/ci.yml)
+[![Download](https://img.shields.io/github/v/release/kyrie25/wuwa-tappo-mac?label=Download)](https://github.com/kyrie25/wuwa-tappo-mac/releases/latest)
 
-**把 Wuwa Tappo 国服和国际服带到 Mac。** 保留各服界面、角色资源和官方服务，使用 Rust + Tauri 重建 macOS 原生后端，不需要 Wine、Windows 或虚拟机。
+**Wuwa Tappo for Mac, in English, for CN and Global accounts.** Uses the official regional interface, characters and services with a native Rust + Tauri backend. No Wine, Windows or virtual machine is required.
 
-这是社区维护的**非官方 macOS 适配版**。国服和国际服分别打包，目前均对齐官方 **1.0.2**，各自检查和跟进官方更新。
+This is a community-maintained, **unofficial macOS port**, maintained in [kyrie25/wuwa-tappo-mac](https://github.com/kyrie25/wuwa-tappo-mac). CN and Global are packaged separately and currently pin official version **1.0.3**. English is the default interface language in both builds. Regional accounts and services remain separate.
 
-## 下载与使用
+## Download and use
 
-前往 **[最新版本](https://github.com/Last-emo-boy/wuwa-tappo-mac/releases/latest)**，按账号所属地区选择 `.dmg`，将应用拖入「应用程序」后打开。也可下载对应的 `.zip` 解压安装。
+Choose the `.dmg` for your account's region from [Releases](https://github.com/kyrie25/wuwa-tappo-mac/releases), then drag the app into Applications. Alternatively, extract the corresponding `.zip`. If this fork has no release yet, build from source below.
 
-| 服务区域 | 应用 | 安装包前缀 |
+| Service region | Application | Package prefix |
 | --- | --- | --- |
-| 国服 | **Wuwa Tappo CN Mac.app** | `WuwaTappo-CN-Mac` |
-| 国际服 | **Wuwa Tappo Global Mac.app** | `WuwaTappo-Global-Mac` |
+| Mainland China | **Wuwa Tappo CN Mac.app** | `WuwaTappo-CN-Mac` |
+| Global | **Wuwa Tappo Global Mac.app** | `WuwaTappo-Global-Mac` |
 
-两个应用可以同时安装，登录、设置、计数和钥匙串条目分别保存，不互相迁移账号数据。
+Both apps can be installed together. Login data, settings, counters and Keychain entries are isolated; account data is not migrated between regions.
 
-- **系统：** Apple Silicon（M 系列），macOS 13 或更高版本。暂未提供 Intel 版本。
-- **完整资源：** 各安装包包含对应地区的界面与内嵌资源，不需要另行下载或提取 EXE。登录、资源更新及在线功能仍需要联网。
-- **首次打开：** 当前版本未经过 Apple 公证；如 macOS 阻止打开，请在「系统设置 → 隐私与安全性」中确认来源后选择「仍要打开」。无需关闭系统安全保护。
-- **输入监控：** 在「系统设置 → 隐私与安全性 → 输入监控」中添加并开启所用的应用。两服需要分别授权；按系统提示退出并重新打开后，桌宠才能响应全局键盘和鼠标输入。
-- **登录：** 国服使用官方内嵌登录界面，国际服使用官方浏览器登录并返回应用。首次启动可选择「仅本次会话」或通过钥匙串记住登录。
+- **Requirements:** Apple Silicon (M series), macOS 13 or later. No Intel build is currently provided.
+- **Included resources:** Each package includes its regional interface and embedded assets. No separate EXE download or extraction is needed. Login, asset updates and online features require internet access.
+- **First launch:** These builds are not notarized by Apple. If macOS blocks the app, verify its source, then use System Settings → Privacy & Security → Open Anyway.
+- **Input Monitoring:** Add and enable the app in System Settings → Privacy & Security → Input Monitoring. Authorize each regional app separately, then quit and reopen it as prompted to enable global keyboard and mouse counting.
+- **Login:** CN uses the official embedded login; Global uses official browser login with a callback to the app. At startup, choose **This Session Only** or **Remember Login** using macOS Keychain.
+- **Language:** App-owned menus, prompts and bundled interface text are English. Login pages, announcements and other content served by Kuro may use the service's language. Character artwork and audio remain the original assets.
 
-更新时先退出旧版，再覆盖「应用程序」中的同名应用；不要同时运行多个副本。若更新后桌宠不响应输入，请检查输入监控权限，必要时移除旧条目、重新添加最新版并重启应用。
+Quit the old app before replacing it in Applications. Avoid running multiple copies. If input stops responding after an update, check Input Monitoring, remove the old entry if needed, add the new app and restart it.
 
-## 功能与当前状态
+## Features and verification status
 
-- 透明桌宠窗口、显示器定位、缩放、置顶与鼠标穿透。
-- 原生键盘/鼠标监听、输入权限状态提示与授权后的监听恢复。
-- 手柄按钮按下统计与拍手反馈，沿用官方 1.0.2 的计数规则。
-- 点击计数本地保存，按应用、账号和服务环境隔离，并沿用官方同步协议。
-- 各服官方登录、原有面板、角色与物品界面。
-- 原生 WebSocket 联机连接、房间创建与退出。
-- 菜单栏控制、开机启动、日志脱敏和登录会话管理。
+- Transparent desktop pet, monitor positioning, scaling, always-on-top and click-through.
+- Native keyboard/mouse monitoring, permission feedback and recovery after authorization.
+- Controller button counting and clap feedback, following official 1.0.3 counting rules.
+- Local click counters isolated by app, account and service environment, using the official sync protocol.
+- Official regional login, panels, characters and item views.
+- Native WebSocket multiplayer connections, room creation and leaving.
+- Menu bar controls, launch at login, redacted logs and login session management.
+- Configurable global shortcuts: F7 toggles Game Mode, F8 switches screens and F9 toggles the pet by default. Change or clear bindings in Settings. Mac modifier labels use Cmd and Option. Shortcuts pause while recording a replacement. Depending on your keyboard settings, function keys may require Fn.
 
-国服此前已进行实机启动、官方登录、房间创建及退出验证。国际服已验证启动、About 与设置面板；官方浏览器登录跳转、真实账号回调和双人联机仍需实机验收。两服的全局键鼠计数均需要系统授权；手柄功能使用系统 GameController 接口，仍需真实手柄验证。宝箱领取、合成、兑换码和多显示器组合尚未完成全面实机验证。相关功能沿用官方界面和服务，不在本地模拟发奖。
+The upstream project previously verified CN startup, official login, room creation and leaving on a real Mac, and Global startup, About and settings panels. Global browser login, real account callbacks and two-player multiplayer still need hands-on acceptance testing. Input counting requires system authorization. Controller support uses Apple's GameController API and needs a physical controller test. Chest claims, synthesis, redemption codes and multi-monitor combinations have not been comprehensively verified. Rewards use official services; the app does not simulate rewards locally.
 
-应用内的官方更新接口目前仅提供 Windows 包，Mac 版本请从本仓库 Releases 更新，不能安装官方 EXE。
+The official in-app update service currently distributes Windows installers. Update the Mac app through this repository's Releases.
 
-## 从源码构建
+## Build from source
 
-需要 macOS、Xcode Command Line Tools、Node.js 24、[rustup](https://rustup.rs/)（Rust 版本由 `rust-toolchain.toml` 固定）和 7-Zip。
+Requires macOS, Xcode Command Line Tools, Node.js 24, [rustup](https://rustup.rs/) (the Rust version is pinned in `rust-toolchain.toml`) and 7-Zip.
 
 ```bash
 xcode-select --install
 brew install node@24 sevenzip
 export PATH="$(brew --prefix node@24)/bin:$PATH"
-git clone https://github.com/Last-emo-boy/wuwa-tappo-mac.git
+git clone https://github.com/kyrie25/wuwa-tappo-mac.git
 cd wuwa-tappo-mac
 npm ci
 npm run setup
@@ -58,7 +60,7 @@ npm run build
 npm run package
 ```
 
-以上命令默认构建国服，现有入口不变。构建国际服时使用：
+The default region is CN. For Global:
 
 ```bash
 export WUWA_REGION=global
@@ -69,27 +71,27 @@ npm run build
 npm run package
 ```
 
-切回国服时执行 `export WUWA_REGION=cn`。也可用 `npm run setup:global`、`npm run build:global` 等快捷命令，但测试仍需指定对应的 `WUWA_REGION`。
+Set `WUWA_REGION=cn` to switch back. Shortcuts such as `npm run setup:global` and `npm run build:global` are also available; select the matching `WUWA_REGION` when running tests.
 
-`setup` 按对应的 `upstream-cn.json` 或 `upstream-global.json` 下载锁定的官方安装包、校验完整性、静态提取资源并准备构建。整个过程不执行 Windows 程序，也不需要登录账号。若已下载对应安装包，可改用（以国服为例）：
+`setup` downloads the installer pinned in `upstream-cn.json` or `upstream-global.json`, verifies its integrity, statically extracts assets and prepares the English frontend. It never executes Windows software and requires no account login. To reuse a downloaded pinned installer (CN example):
 
 ```bash
 export WUWA_REGION=cn
-npm run assets:sync -- --installer "$HOME/Downloads/WuwaTappo-cn_1.0.2_x64-setup.exe"
+npm run assets:sync -- --installer "$HOME/Downloads/WuwaTappo-cn_1.0.3_x64-setup.exe"
 npm run icons
 npm run prepare:frontend
 ```
 
-构建后的应用位于 `src-tauri/target/release/bundle/macos/`，完整分发包位于 `dist/`。国服使用 `frontend/`，国际服使用 `frontend-global/`；两服的准备目录与图标也分开。资源目录、`build/`、`dist/` 与本地缓存不提交到源码仓库，官方资源在构建时取得并嵌入最终安装包。
+Built apps are under `src-tauri/target/release/bundle/macos/`; distribution packages are under `dist/`. CN uses `frontend/`, Global uses `frontend-global/`, and each has separate prepared assets and icons. Official resources, `build/`, `dist/` and local caches are excluded from Git. Resources are acquired at build time and embedded in the app.
 
-## CI/CD 与官方版本同步
+## CI, releases and official version synchronization
 
-- **提交 / Pull Request：** 国服与国际服分别执行下载、JavaScript / Rust 测试、原生构建与完整 ZIP / DMG 打包，构建产物和缓存按区域隔离。
-- **版本发布：** 推送 `v*` 标签（如 `v1.0.2-mac.1`）后执行双服检查；全部通过才向同一个 Release 发布四个安装包。也支持手动发布。
-- **官方同步：** 每天分别检查两服官方更新。兼容检查与打包通过后创建更新 PR；提取成功但尚未适配时创建草稿 PR，并保存接口差异与失败日志。持续失败时提交对应地区的问题，未经验证的版本不会自动发布。
-- **构建源：** 已验证的安装包按地区与官方资源锁缓存，每次复用仍校验完整性。CI 无缓存时先从官方下载；瞬态网络错误重试耗尽后，可使用本仓库 [构建源镜像](https://github.com/Last-emo-boy/wuwa-tappo-mac/releases/tag/upstream-resources) 中按官方 SHA-256 固定的原包，仍核对原锁的大小与摘要。官方版本发现和新资源锁定始终访问官方源；镜像文件不是 Mac 安装入口。
+- **Commits and pull requests:** Each region independently downloads assets, runs JavaScript and Rust tests, builds the native app and packages ZIP/DMG files. Caches and artifacts are isolated by region.
+- **Releases:** A `v*` tag (for example `v1.0.3-mac.1`) runs checks for both regions. All four packages are published in one release only after both pass. Manual releases are also supported.
+- **Official synchronization:** Daily jobs check each official service. Compatible updates produce an update PR; extracted versions that need adaptation produce a draft with contract differences and failure logs. Failures create a regional issue. Unverified versions are never automatically released.
+- **Build mirrors:** Verified installers are cached by region and resource lock, with integrity checked on reuse. CI downloads from the official source first; after transient failures it may use the repository's [build mirror](https://github.com/kyrie25/wuwa-tappo-mac/releases/tag/upstream-resources), pinned by the official SHA-256 and size. Discovery and new resource locks always use official sources. Mirror EXEs are build inputs, not Mac installers.
 
-维护者可在本地检查或同步选定地区的上游（默认国服，国际服先设置 `WUWA_REGION=global`）：
+Check or synchronize the selected region locally (set `WUWA_REGION=global` for Global):
 
 ```bash
 npm run upstream:check
@@ -100,8 +102,10 @@ npm run test:rust
 npm run build
 ```
 
-## 隐私与许可
+See [synchronization troubleshooting](docs/SYNCHRONIZATION.md) for the 1.0.3 extraction failure and the steps required before adopting a new official version. Accepted contract snapshots describe the unmodified official frontend. Review contract changes before updating those snapshots; English preparation happens afterward.
 
-发行包不包含维护者的登录凭据、钥匙串内容、账号缓存、点击记录或日志。选择「仅本次会话」时不把登录凭据写入钥匙串；选择记住登录时由系统钥匙串保存。输入监听用于响应按键/点击，原生后端不记录输入的正文。
+## Privacy and licensing
 
-本仓库原创的 macOS 后端与适配工具采用 [MIT 许可](LICENSE)。官方界面、角色、美术、音频等资源及第三方依赖保留各自权利与许可，**不因随包分发而转为 MIT 授权**。详见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+Packages contain no maintainer credentials, Keychain contents, account caches, click history or logs. **This Session Only** keeps credentials out of Keychain. **Remember Login** stores them in the system Keychain. Native input monitoring responds to key presses/clicks without recording typed text.
+
+Original macOS backend and adaptation tools use the [MIT License](LICENSE). Official interface, characters, artwork, audio and third-party dependencies retain their original rights and licenses; bundling does **not** relicense them under MIT. See [third-party notices](THIRD_PARTY_NOTICES.md).

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag, for example v1.0.2-mac.1
+        description: Existing version tag, for example v1.0.3-mac.1
         required: true
         type: string
 
@@ -49,22 +49,25 @@ jobs:
             done
           done
           cat > /tmp/release-notes.md <<'NOTES'
-          ## Wuwa Tappo · macOS 非官方重建版（国服 / 国际服）
+          ## Wuwa Tappo · Unofficial macOS Community Build (CN / Global)
 
-          国服下载名称含 `CN` 的文件，国际服下载名称含 `Global` 的文件；两服应用、账号缓存和点击记录相互独立，可同时安装。
+          Choose a file containing `CN` for a mainland China account or `Global` for a Global account. Both apps use English by default. Their accounts, settings and counters are isolated, and both can be installed together.
 
-          下载 DMG 后将应用拖入“应用程序”，或解压 ZIP 后移动应用。两服安装包都包含各自官方界面、图像及运行资源，不需要 Windows、Wine 或手动提取 EXE。登录和联机仍需要连接对应地区的官方服务。
+          Drag the app from the DMG into Applications, or extract the ZIP and move the app there. Packages include their regional interface and assets. Login and multiplayer require the corresponding official services.
 
-          - 支持 Apple Silicon，macOS 13 及以上。
-          - 首次启动请按提示授权“输入监控”，用于按键和点击计数。
-          - 当前使用临时签名，未进行 Apple 公证。系统可能要求在“隐私与安全性”中确认打开。
-          - 包内不包含任何人的账号、登录凭据、点击记录或系统缓存。
-          - 本项目由社区维护，不是库洛官方 Mac 客户端。随包的官方资源归原权利人所有；官方规则、账号和资产仍由官方服务决定。
+          - Apple Silicon; macOS 13 or later.
+          - English interface and native prompts, including update feedback.
+          - Official 1.0.3 resources for both regions.
+          - Configurable global shortcuts with Cmd/Option labels, capture and persistence.
+          - Authorize Input Monitoring for keyboard and mouse counting.
+          - Ad-hoc signed and not notarized by Apple. macOS may require Open Anyway in Privacy & Security.
+          - No personal credentials, click history or account caches are included.
+          - Community maintained and unofficial. Official assets retain their original ownership, and accounts, rewards and service rules are controlled by Kuro Games.
 
-          每服 ZIP 与 DMG 内容相同，共四个安装文件。只有两服自动化测试、原生构建和完整打包都成功后才发布；真人登录、系统权限及双人联机仍需实际验证。
+          ZIP and DMG contain the same app for each region (four files in total). Publication requires passing tests, native builds and packaging for both regions. Real account login, system permissions and multiplayer still require hands-on verification.
           NOTES
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.zip dist/*.dmg --clobber
           else
-            gh release create "$TAG" dist/*.zip dist/*.dmg --verify-tag --title "Wuwa Tappo Mac 国服 / 国际服 $TAG" --notes-file /tmp/release-notes.md --latest
+            gh release create "$TAG" dist/*.zip dist/*.dmg --verify-tag --title "Wuwa Tappo Mac CN / Global $TAG" --notes-file /tmp/release-notes.md --latest
           fi

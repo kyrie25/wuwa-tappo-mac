@@ -2,6 +2,23 @@
   const run = async () => {
     const result = {};
     const invoke = window.__TAURI__.core.invoke;
+    const originalShortcuts = await invoke('get_app_shortcuts');
+    try {
+      await invoke('set_shortcut_capture', { active: true });
+      const disabled = Object.fromEntries(Object.keys(originalShortcuts).map(action => [action, { modifiers: 0, key: 0 }]));
+      await invoke('set_app_shortcuts', { config: disabled });
+      result.shortcutsSaved = JSON.stringify(await invoke('get_app_shortcuts')) === JSON.stringify(disabled);
+      let duplicateRejected = false;
+      try {
+        await invoke('set_app_shortcuts', { config: { ...disabled, gameMode: { modifiers: 0, key: 118 }, togglePet: { modifiers: 0, key: 118 } } });
+      } catch (error) { duplicateRejected = String(error) === 'duplicate'; }
+      result.shortcutDuplicateRejected = duplicateRejected;
+    } finally {
+      await invoke('set_app_shortcuts', { config: originalShortcuts });
+      await invoke('set_shortcut_capture', { active: false });
+    }
+    result.shortcutsRestored = JSON.stringify(await invoke('get_app_shortcuts')) === JSON.stringify(originalShortcuts);
+    await invoke('write_app_log', { level: 'info', message: `[MAC_SHORTCUT_SELFTEST] ${JSON.stringify(result)}` });
     const name = '__wuwatappo_mac_selftest';
     try {
       document.cookie = `${name}=synthetic; Max-Age=60; Path=/; SameSite=None; Secure`;
@@ -28,7 +45,7 @@
     });
     const bounds = document.querySelector('.pet-dock').getBoundingClientRect();
     result.petVisible = bounds.width > 0 && bounds.height > 0 && bounds.left >= 0 && bounds.top >= 0 && bounds.right <= innerWidth && bounds.bottom <= innerHeight;
-    result.passed = result.keychainWrite && result.keychainDelete && result.petVisible;
+    result.passed = result.keychainWrite && result.keychainDelete && result.petVisible && result.shortcutsSaved && result.shortcutsRestored && result.shortcutDuplicateRejected;
     window.__WUWATAPPO_RUNTIME_SMOKE__ = result;
     await invoke('write_app_log', { level: result.passed ? 'info' : 'error', message: `[MAC_SELFTEST] ${JSON.stringify(result)}` });
   };

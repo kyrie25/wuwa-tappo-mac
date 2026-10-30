@@ -539,28 +539,28 @@ fn mac_update_status(manifest: &Value, target: &str, region: Region) -> Result<V
     let platforms = manifest
         .get("platforms")
         .and_then(Value::as_object)
-        .ok_or("更新清单缺少平台信息")?;
+        .ok_or("The update manifest has no platform information")?;
     let Some(platform) = platforms.get(target) else {
-        return Err("官方更新清单没有适用于此 Mac 的版本；请手动更新 Mac 应用。".into());
+        return Err("The official update manifest has no build for this Mac. Update the Mac app manually.".into());
     };
     let url = platform
         .get("url")
         .and_then(Value::as_str)
-        .ok_or("macOS 更新清单缺少下载地址")?;
+        .ok_or("The macOS update manifest has no download URL")?;
     let url = validate_manifest_endpoint(region, url)?;
     if url.path().to_ascii_lowercase().ends_with(".exe")
         || url.path().to_ascii_lowercase().ends_with(".msi")
     {
-        return Err("更新清单中的 macOS 资源实际是 Windows 安装包，已拒绝安装。".into());
+        return Err("The macOS update points to a Windows installer. Installation was refused.".into());
     }
     if platform
         .get("signature")
         .and_then(Value::as_str)
         .is_none_or(str::is_empty)
     {
-        return Err("macOS 更新资源缺少签名，已拒绝安装。".into());
+        return Err("The macOS update has no signature. Installation was refused.".into());
     }
-    Err("检测到 macOS 更新，但此重建版尚未配置可信更新签名；请手动更新 Mac 应用。".into())
+    Err("A macOS update is available, but this community build has no trusted updater signature configured. Update the Mac app manually.".into())
 }
 
 fn check_app_update(region: Region, endpoint: &str) -> Result<Value, String> {
@@ -570,30 +570,30 @@ fn check_app_update(region: Region, endpoint: &str) -> Result<Value, String> {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| e.to_string())?;
-    let response = client.get(url).send().map_err(|_| "读取官方更新清单失败")?;
+    let response = client.get(url).send().map_err(|_| "Could not read the official update manifest")?;
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("读取官方更新清单失败（HTTP {}）", status.as_u16()));
+        return Err(format!("Could not read the official update manifest (HTTP {})", status.as_u16()));
     }
     if response
         .content_length()
         .is_some_and(|size| size > MAX_MANIFEST_BYTES)
     {
-        return Err("官方更新清单超出大小限制".into());
+        return Err("The official update manifest exceeds the size limit".into());
     }
     let mut bytes = Vec::new();
     response
         .take(MAX_MANIFEST_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|_| "读取官方更新清单失败")?;
+        .map_err(|_| "Could not read the official update manifest")?;
     if bytes.len() as u64 > MAX_MANIFEST_BYTES {
-        return Err("官方更新清单超出大小限制".into());
+        return Err("The official update manifest exceeds the size limit".into());
     }
-    let manifest: Value = serde_json::from_slice(&bytes).map_err(|_| "官方更新清单格式无效")?;
+    let manifest: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid official update manifest")?;
     let target = match std::env::consts::ARCH {
         "aarch64" => "darwin-aarch64",
         "x86_64" => "darwin-x86_64",
-        _ => return Err("此 Mac 架构没有更新通道".into()),
+        _ => return Err("No update channel exists for this Mac architecture".into()),
     };
     mac_update_status(&manifest, target, region)
 }
@@ -749,11 +749,11 @@ mod tests {
     fn windows_update_never_becomes_a_mac_update() {
         let manifest = json!({ "version": "1.0.0", "platforms": { "windows-x86_64": { "url": "https://wutheringwaves-wuwatappo.kurogames-global.com/setup.exe", "signature": "signature" } } });
         let error = mac_update_status(&manifest, "darwin-aarch64", Region::Global).unwrap_err();
-        assert!(error.contains("没有适用于此 Mac"));
+        assert!(error.contains("no build for this Mac"));
         let disguised = json!({ "platforms": { "darwin-aarch64": { "url": "https://wutheringwaves-wuwatappo.kurogames-global.com/setup.exe", "signature": "signature" } } });
         assert!(mac_update_status(&disguised, "darwin-aarch64", Region::Global)
             .unwrap_err()
-            .contains("Windows 安装包"));
+            .contains("Windows installer"));
     }
 
     #[test]
@@ -762,7 +762,7 @@ mod tests {
         let unsigned = json!({ "platforms": { "darwin-aarch64": { "url": "https://wutheringwaves-wuwatappo.kurogames-global.com/mac.tar.gz" } } });
         assert!(mac_update_status(&unsigned, "darwin-aarch64", Region::Global)
             .unwrap_err()
-            .contains("缺少签名"));
+            .contains("no signature"));
     }
 
     #[test]

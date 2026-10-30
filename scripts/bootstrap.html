@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Wuwa Tappo CN Mac</title>
@@ -13,10 +13,10 @@
   button:disabled{opacity:.5;cursor:default}
   #memory{background:AccentColor;color:AccentColorText;border-color:AccentColor}
 </style>
-<h1>Wuwa Tappo · 国服</h1>
-<p id="status">仅本次会话：登录信息只保存在内存，退出后清除。
-记住登录：使用 macOS 钥匙串，需要系统授权。</p>
-<footer><button id="quit">退出</button><button id="keychain">记住登录</button><button id="memory">仅本次会话</button></footer>
+<h1>Wuwa Tappo · CN</h1>
+<p id="status">This session only: credentials stay in memory and are cleared on exit.
+Remember login: store credentials in macOS Keychain; system authorization is required.</p>
+<footer><button id="quit">Quit</button><button id="keychain">Remember Login</button><button id="memory">This Session Only</button></footer>
 <script>
   const api=window.__TAURI__;
   const status=document.getElementById('status'),memory=document.getElementById('memory'),keychain=document.getElementById('keychain');

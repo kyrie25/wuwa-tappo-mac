@@ -25,6 +25,7 @@ struct Labels {
     window_size: String,
     window_passthrough: String,
     window_opacity: String,
+    game_mode: String,
     restart: String,
     quit: String,
     tray_tooltip: String,
@@ -33,19 +34,20 @@ struct Labels {
 impl Default for Labels {
     fn default() -> Self {
         Self {
-            open_bag: "背包".into(),
-            open_atlas: "图鉴".into(),
-            open_exchange: "合成".into(),
-            open_room: "联机".into(),
-            hide_pet: "隐藏桌宠".into(),
-            show_pet: "显示桌宠".into(),
-            tray_open_settings: "设置".into(),
-            dock_settings: "设置".into(),
-            window_size: "桌宠大小".into(),
-            window_passthrough: "鼠标穿透".into(),
-            window_opacity: "不透明度".into(),
-            restart: "重新启动".into(),
-            quit: "退出 Wuwa Tappo".into(),
+            open_bag: "Inventory".into(),
+            open_atlas: "Collection".into(),
+            open_exchange: "Synthesis".into(),
+            open_room: "Multiplayer".into(),
+            hide_pet: "Hide Pet".into(),
+            show_pet: "Show Pet".into(),
+            tray_open_settings: "Settings".into(),
+            dock_settings: "Settings".into(),
+            window_size: "Pet Size".into(),
+            window_passthrough: "Click Through".into(),
+            window_opacity: "Opacity".into(),
+            game_mode: "Game Mode".into(),
+            restart: "Restart".into(),
+            quit: "Quit Wuwa Tappo".into(),
             tray_tooltip: "Wuwa Tappo".into(),
         }
     }
@@ -59,6 +61,7 @@ struct MenuOptions {
     pet_scale: u32,
     window_opacity: u32,
     window_passthrough: bool,
+    game_mode: bool,
 }
 
 impl Default for MenuOptions {
@@ -69,6 +72,7 @@ impl Default for MenuOptions {
             pet_scale: 100,
             window_opacity: 100,
             window_passthrough: false,
+            game_mode: false,
         }
     }
 }
@@ -193,8 +197,9 @@ fn context_items(
             options.window_passthrough,
         )?,
         MenuItemKind::Predefined(PredefinedMenuItem::separator(app)?),
-        normal(app, "input-access", "启用键鼠监听…")?,
-        normal(app, "open-logs", "查看日志")?,
+        checked(app, "toggle-game-mode", &labels.game_mode, options.game_mode)?,
+        normal(app, "input-access", "Enable Keyboard and Mouse Monitoring…")?,
+        normal(app, "open-logs", "Open Logs")?,
         MenuItemKind::Predefined(PredefinedMenuItem::separator(app)?),
         normal(app, "restart", &labels.restart)?,
         normal(app, "quit", &labels.quit)?,
@@ -218,14 +223,14 @@ fn application_menu(app: &AppHandle, options: &MenuOptions) -> tauri::Result<Men
     application.append(&MenuItem::with_id(
         app,
         "open-about",
-        "关于 Wuwa Tappo",
+        "About Wuwa Tappo",
         true,
         None::<&str>,
     )?)?;
     let session_label = match app.try_state::<crate::session::SessionStore>() {
-        Some(session) if session.is_ephemeral() => "登录信息：仅本次会话",
-        Some(_) => "登录信息：钥匙串",
-        None => "登录信息：尚未选择",
+        Some(session) if session.is_ephemeral() => "Credentials: This Session Only",
+        Some(_) => "Credentials: Keychain",
+        None => "Credentials: Not Selected",
     };
     application.append(&MenuItem::with_id(
         app,
@@ -245,7 +250,7 @@ fn application_menu(app: &AppHandle, options: &MenuOptions) -> tauri::Result<Men
     application.append(&MenuItem::with_id(
         app,
         "input-access",
-        "启用键鼠监听…",
+        "Enable Keyboard and Mouse Monitoring…",
         true,
         None::<&str>,
     )?)?;
@@ -264,7 +269,7 @@ fn application_menu(app: &AppHandle, options: &MenuOptions) -> tauri::Result<Men
 
     let edit = Submenu::with_items(
         app,
-        "编辑",
+        "Edit",
         true,
         &[
             &PredefinedMenuItem::undo(app, None)?,
@@ -291,6 +296,7 @@ fn event_for_id(id: &str) -> Option<(&'static str, Value)> {
         "open-room" => ("dock-open-panel", Value::from("room")),
         "open-setting" => ("dock-open-panel", Value::from("setting")),
         "toggle-pet" => ("tray-toggle-pet-visibility", Value::Null),
+        "toggle-game-mode" => ("tray-toggle-game-mode", Value::Null),
         "toggle-passthrough" => ("tray-toggle-window-passthrough", Value::Null),
         "restart" => ("tray-restart", Value::Null),
         "quit" => ("tray-quit", Value::Null),
@@ -414,6 +420,7 @@ mod tests {
     fn normal_shutdown_actions_preserve_frontend_flush_events() {
         assert_eq!(event_for_id("quit"), Some(("tray-quit", Value::Null)));
         assert_eq!(event_for_id("restart"), Some(("tray-restart", Value::Null)));
+        assert_eq!(event_for_id("toggle-game-mode"), Some(("tray-toggle-game-mode", Value::Null)));
     }
 
     #[test]
@@ -455,7 +462,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(options.labels.open_bag, "Backpack");
-        assert_eq!(options.labels.open_atlas, "图鉴");
+        assert_eq!(options.labels.open_atlas, "Collection");
         assert!(!options.pet_dock_visible);
         assert_eq!(options.pet_scale, 51);
         assert_eq!(options.window_opacity, 0);
