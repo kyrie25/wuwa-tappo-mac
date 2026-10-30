@@ -79,6 +79,7 @@ jobs:
           NOTES
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.zip dist/*.dmg dist/*.app.tar.gz dist/*.app.tar.gz.sig --clobber
+            gh release edit "$TAG" --title "$TAG"
           else
-            gh release create "$TAG" dist/*.zip dist/*.dmg dist/*.app.tar.gz dist/*.app.tar.gz.sig --verify-tag --title "Wuwa Tappo Mac CN / Global $TAG" --notes-file /tmp/release-notes.md --latest
+            gh release create "$TAG" dist/*.zip dist/*.dmg dist/*.app.tar.gz dist/*.app.tar.gz.sig --verify-tag --title "$TAG" --notes-file /tmp/release-notes.md --latest
           fi
