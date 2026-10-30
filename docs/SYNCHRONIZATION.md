@@ -41,6 +41,6 @@ CI downloads resources from the official installer CDN and stores verified insta
 
 ## In-app Check for Update
 
-Mac app updates use [this fork’s Releases](https://github.com/kyrie25/wuwa-tappo-mac/releases), separately from official resource synchronization. Check for Updates compares the embedded fork release revision, then offers the matching CN/Global Mac package in the browser. It does not install official Windows updates. See [Mac update discovery and publishing](MAC_UPDATES.md) for release identity, metadata and validation requirements.
+Mac app updates use [this fork’s Releases](https://github.com/kyrie25/wuwa-tappo-mac/releases), separately from official resource synchronization. Check for Updates compares the embedded fork release revision, then offers signed installation through Update and Restart, with manual CN/Global downloads as a fallback. It does not install official Windows updates. See [Mac update discovery and publishing](MAC_UPDATES.md) for release identity, metadata and validation requirements.
 
 If the issue you are investigating instead concerns account counters, inventory or multiplayer state, reproduce it with the selected region, app version, exact actions and redacted application logs. Never include login tokens or Keychain contents in an issue.

@@ -1,12 +1,14 @@
 use crate::profile::Region;
 use serde::{Deserialize, Serialize};
 use std::{io::Read, sync::Mutex, time::Duration};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::UpdaterExt;
 
 const REPOSITORY: &str = "https://github.com/kyrie25/wuwa-tappo-mac";
 const API: &str = "https://api.github.com/repos/kyrie25/wuwa-tappo-mac/releases?per_page=100";
 const MAX_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_PACKAGE_BYTES: u64 = 512 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Version([u64; 4]);
@@ -60,6 +62,22 @@ struct AvailableRelease {
     release_url: String,
     download_url: String,
     asset_name: String,
+    can_install: bool,
+    #[serde(skip)]
+    package: Option<UpdatePackage>,
+}
+
+#[derive(Clone)]
+struct UpdatePackage {
+    url: String,
+    signature_url: String,
+    size: u64,
+}
+
+struct PreparedUpdate {
+    version: String,
+    update: tauri_plugin_updater::Update,
+    bytes: Vec<u8>,
 }
 
 #[derive(Clone, Serialize)]
@@ -72,7 +90,10 @@ struct Check {
 }
 
 #[derive(Default)]
-pub struct UpdaterState(Mutex<Option<Check>>);
+pub struct UpdaterState {
+    latest: Mutex<Option<Check>>,
+    prepared: Mutex<Option<PreparedUpdate>>,
+}
 
 pub fn build_info() -> serde_json::Value {
     serde_json::json!({
@@ -185,6 +206,17 @@ fn select_release(
         }
     }
     let (asset, url) = selected.ok_or_else(|| format!("The latest release has no complete {label} Apple Silicon Mac package. Try again after publication finishes."))?;
+    let package_name = format!("WuwaTappo-{label}-Mac-{}-arm64.app.tar.gz", version.base());
+    let package = match (
+        trusted_asset(release, &package_name)?,
+        trusted_asset(release, &format!("{package_name}.sig"))?,
+    ) {
+        (Some(package), Some(signature)) if package.size <= MAX_PACKAGE_BYTES && signature.size <= 16 * 1024 => Some(UpdatePackage {
+            url: package.browser_download_url.clone(), signature_url: signature.browser_download_url.clone(), size: package.size,
+        }),
+        (None, None) if version <= Version([1, 0, 3, 4]) => None,
+        _ => return Err("The release’s signed updater package is missing or incomplete. Try again after publication finishes.".into()),
+    };
     result.release = Some(AvailableRelease {
         version: release.tag_name.trim_start_matches('v').into(),
         notes: release
@@ -198,8 +230,25 @@ fn select_release(
         release_url,
         download_url: url,
         asset_name: asset.name.clone(),
+        can_install: installed.is_some() && package.is_some(),
+        package,
     });
     Ok(result)
+}
+
+fn trusted_asset<'a>(release: &'a Release, name: &str) -> Result<Option<&'a Asset>, String> {
+    let assets: Vec<_> = release.assets.iter().filter(|a| a.name == name).collect();
+    if assets.len() > 1 {
+        return Err("The release contains ambiguous updater packages".into());
+    }
+    let Some(asset) = assets.first() else {
+        return Ok(None);
+    };
+    let expected = format!("{REPOSITORY}/releases/download/{}/{name}", release.tag_name);
+    if asset.state != "uploaded" || asset.size == 0 || asset.browser_download_url != expected {
+        return Err("The release’s updater package is incomplete or has an invalid URL".into());
+    }
+    Ok(Some(asset))
 }
 
 fn http_error(status: u16) -> String {
@@ -240,10 +289,14 @@ fn fetch_releases() -> Result<Vec<Release>, String> {
 pub fn check(app: &AppHandle) -> Result<serde_json::Value, String> {
     let state = app.state::<UpdaterState>();
     let mut latest = state
-        .0
+        .latest
         .try_lock()
         .map_err(|_| "An update check is already in progress. Try again shortly.")?;
     *latest = None;
+    *state
+        .prepared
+        .lock()
+        .map_err(|_| "Update state lock failed")? = None;
     let releases = fetch_releases()?;
     let result = select_release(
         &releases,
@@ -259,7 +312,7 @@ pub fn check(app: &AppHandle) -> Result<serde_json::Value, String> {
 pub fn open(app: &AppHandle, action: &str, version: &str) -> Result<serde_json::Value, String> {
     let state = app.state::<UpdaterState>();
     let latest = state
-        .0
+        .latest
         .try_lock()
         .map_err(|_| "An update check is in progress")?;
     let release = latest
@@ -282,6 +335,161 @@ pub fn open(app: &AppHandle, action: &str, version: &str) -> Result<serde_json::
     Ok(serde_json::Value::Null)
 }
 
+pub(crate) fn public_key(region: Region) -> &'static str {
+    match region {
+        Region::Cn => include_str!("../updater-cn.pub").trim(),
+        Region::Global => include_str!("../updater-global.pub").trim(),
+    }
+}
+
+fn package_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(300))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            let url = attempt.url();
+            if attempt.previous().len() < 5
+                && url.scheme() == "https"
+                && matches!(
+                    url.host_str(),
+                    Some(
+                        "github.com"
+                            | "release-assets.githubusercontent.com"
+                            | "objects.githubusercontent.com"
+                    )
+                )
+            {
+                attempt.follow()
+            } else {
+                attempt.error("Untrusted update redirect")
+            }
+        }))
+        .build()
+        .map_err(|_| "Could not initialize the update download".into())
+}
+
+fn read_package(
+    mut response: impl Read,
+    expected: u64,
+    mut progress: impl FnMut(u64),
+) -> Result<Vec<u8>, String> {
+    if expected == 0 || expected > MAX_PACKAGE_BYTES {
+        return Err("Invalid updater package size".into());
+    }
+    let mut bytes = Vec::new();
+    let mut buffer = [0; 64 * 1024];
+    loop {
+        let count = response
+            .read(&mut buffer)
+            .map_err(|_| "The update download was interrupted. Try again.")?;
+        if count == 0 {
+            break;
+        }
+        if bytes.len() as u64 + count as u64 > expected {
+            return Err("The update package exceeds its declared size".into());
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+        progress(bytes.len() as u64);
+    }
+    if bytes.len() as u64 != expected {
+        return Err("The update download is incomplete. Try again.".into());
+    }
+    Ok(bytes)
+}
+
+pub fn download(app: &AppHandle, version: &str) -> Result<serde_json::Value, String> {
+    let state = app.state::<UpdaterState>();
+    // Keep discovery/browser actions serialized with preparation and installation.
+    let latest = state
+        .latest
+        .try_lock()
+        .map_err(|_| "An update operation is already in progress")?;
+    let release = latest
+        .as_ref()
+        .and_then(|c| c.release.as_ref())
+        .filter(|r| r.version == version && r.can_install)
+        .ok_or("Check for a newer signed update before installing")?;
+    *state
+        .prepared
+        .lock()
+        .map_err(|_| "Update state lock failed")? = None;
+    let package = release
+        .package
+        .as_ref()
+        .ok_or("No signed updater package is available")?;
+    let client = package_client()?;
+    let signature = client
+        .get(&package.signature_url)
+        .send()
+        .and_then(|r| r.error_for_status())
+        .map_err(|_| "Could not download the update signature. Try again.")?;
+    let mut signature_text = String::new();
+    signature
+        .take(16 * 1024 + 1)
+        .read_to_string(&mut signature_text)
+        .map_err(|_| "Invalid update signature")?;
+    if signature_text.len() > 16 * 1024 {
+        return Err("Update signature exceeds the size limit".into());
+    }
+    let metadata = serde_json::json!({"version": version, "url": package.url, "signature": signature_text.trim()});
+    // Fork versions use their own four-component comparator, rather than Cargo's resource version.
+    // restore_update requires the signature to bind the announced version as well as the bytes.
+    let update = app
+        .updater_builder()
+        .pubkey(public_key(Region::from_app(app)))
+        .version_comparator(|_, _| true)
+        .build()
+        .map_err(|e| e.to_string())?
+        .restore_update(metadata)
+        .map_err(|e| e.to_string())?
+        .ok_or("No installable update")?;
+    let response = client
+        .get(&package.url)
+        .send()
+        .and_then(|r| r.error_for_status())
+        .map_err(|_| {
+            "Could not download the update package. Check your connection and try again."
+        })?;
+    let mut last = std::time::Instant::now() - Duration::from_secs(1);
+    let bytes = read_package(response, package.size, |downloaded| {
+        if last.elapsed() >= Duration::from_millis(100) || downloaded == package.size {
+            let _ = app.emit(
+                "mac-update-progress",
+                serde_json::json!({"version":version,"downloaded":downloaded,"total":package.size}),
+            );
+            last = std::time::Instant::now();
+        }
+    })?;
+    update
+        .verify(&bytes)
+        .map_err(|e| format!("Update signature or version verification failed: {e}"))?;
+    *state
+        .prepared
+        .lock()
+        .map_err(|_| "Update state lock failed")? = Some(PreparedUpdate {
+        version: version.into(),
+        update,
+        bytes,
+    });
+    Ok(serde_json::Value::Null)
+}
+
+pub fn install(app: &AppHandle, version: &str) -> Result<serde_json::Value, String> {
+    let state = app.state::<UpdaterState>();
+    let _latest = state
+        .latest
+        .try_lock()
+        .map_err(|_| "An update operation is already in progress")?;
+    let prepared = state
+        .prepared
+        .lock()
+        .map_err(|_| "Update state lock failed")?
+        .take()
+        .filter(|p| p.version == version)
+        .ok_or("Download and verify this update before installing")?;
+    prepared.update.install(&prepared.bytes).map_err(|e| format!("Could not install the update: {e}. The app will remain open; you can retry or use the manual download."))?;
+    app.restart();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,7 +497,7 @@ mod tests {
 
     fn release(tag: &str) -> Release {
         let base = Version::parse(tag).unwrap().base();
-        let assets: Vec<_> = ["CN", "Global"].into_iter().flat_map(|region| ["dmg", "zip"].map(move |ext| (region, ext)))
+        let assets: Vec<_> = ["CN", "Global"].into_iter().flat_map(|region| ["dmg", "zip", "app.tar.gz", "app.tar.gz.sig"].map(move |ext| (region, ext)))
             .map(|(region, ext)| {
                 let name = format!("WuwaTappo-{region}-Mac-{base}-arm64.{ext}");
                 json!({"browser_download_url":format!("{REPOSITORY}/releases/download/{tag}/{name}"),"name":name,"state":"uploaded","size":123})
@@ -424,5 +632,141 @@ mod tests {
         assert!(http_error(403).contains("rate limit"));
         assert!(http_error(429).contains("rate limit"));
         assert!(http_error(500).contains("HTTP 500"));
+    }
+    #[test]
+    fn automatic_updates_require_a_complete_matching_signed_package() {
+        for region in [Region::Cn, Region::Global] {
+            let result = check(&[release("v1.0.3-mac.5")], Some("v1.0.3-mac.4"), region).unwrap();
+            assert!(result.release.unwrap().can_install);
+            assert!(
+                !check(&[release("v1.0.3-mac.5")], None, region)
+                    .unwrap()
+                    .release
+                    .unwrap()
+                    .can_install
+            );
+        }
+        for mutation in 0..5 {
+            let mut r = release("v1.0.3-mac.5");
+            let i = r
+                .assets
+                .iter()
+                .position(|a| a.name.contains("CN") && a.name.ends_with(".sig"))
+                .unwrap();
+            match mutation {
+                0 => {
+                    r.assets.remove(i);
+                }
+                1 => {
+                    r.assets[i].browser_download_url =
+                        "https://github.com/other/repo/update.sig".into()
+                }
+                2 => r.assets[i].size = 0,
+                3 => r.assets[i].size = 16385,
+                _ => r.assets[i].state = "starter".into(),
+            }
+            assert!(check(&[r], Some("v1.0.3-mac.4"), Region::Cn).is_err());
+        }
+        let mut legacy = release("v1.0.3-mac.4");
+        legacy.assets.retain(|a| !a.name.contains("app.tar.gz"));
+        assert!(
+            !check(&[legacy], Some("v1.0.3-mac.3"), Region::Cn)
+                .unwrap()
+                .release
+                .unwrap()
+                .can_install
+        );
+        assert_ne!(public_key(Region::Cn), public_key(Region::Global));
+    }
+
+    #[test]
+    fn package_download_requires_exact_bounded_bytes() {
+        assert_eq!(read_package(&b"abc"[..], 3, |_| {}).unwrap(), b"abc");
+        assert!(read_package(&b"abc"[..], 2, |_| {}).is_err());
+        assert!(read_package(&b"ab"[..], 3, |_| {}).is_err());
+        assert!(read_package(&b""[..], 0, |_| {}).is_err());
+        assert!(read_package(&b""[..], MAX_PACKAGE_BYTES + 1, |_| {}).is_err());
+    }
+
+    #[test]
+    fn real_updater_verifies_bytes_region_key_and_signed_fork_version() {
+        use tauri_plugin_updater::UpdaterExt;
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().plugins.0.insert(
+            "updater".into(),
+            json!({"pubkey":"","requireSignedVersion":true,"endpoints":[API]}),
+        );
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .build(context)
+            .unwrap();
+        let payload = include_bytes!("../../tests/fixtures/updates/payload.txt");
+        let signature = include_str!("../../tests/fixtures/updates/payload.txt.sig").trim();
+        let fixture_key = include_str!("../../tests/fixtures/updates/test.pub").trim();
+        for (key, version, valid) in [
+            (fixture_key, "1.0.3-mac.5", true),
+            (fixture_key, "1.0.3-mac.6", false),
+            (public_key(Region::Cn), "1.0.3-mac.5", false),
+        ] {
+            let update = app.updater_builder().pubkey(key).version_comparator(|_, _| true)
+                .executable_path("/tmp/Wuwa Test.app/Contents/MacOS/test").build().unwrap()
+                .restore_update(json!({"version":version,"url":"https://github.com/kyrie25/wuwa-tappo-mac/test.tar.gz","signature":signature})).unwrap().unwrap();
+            assert_eq!(update.verify(payload).is_ok(), valid);
+            assert!(update.verify(b"tampered update").is_err());
+        }
+    }
+    #[test]
+    fn signed_archive_replaces_only_the_isolated_app_and_tampering_preserves_it() {
+        use std::os::unix::fs::PermissionsExt;
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context
+            .config_mut()
+            .plugins
+            .0
+            .insert("updater".into(), json!({"pubkey":"","endpoints":[API]}));
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .build(context)
+            .unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "wuwa-update-install-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let bundle = root.join("Wuwa Update Test.app");
+        let executable = bundle.join("Contents/MacOS/test");
+        std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        std::fs::write(&executable, "old test app").unwrap();
+        let data = root.join("counters-and-session-sentinel");
+        std::fs::write(&data, "preserve user data").unwrap();
+        let update = app.updater_builder().pubkey(include_str!("../../tests/fixtures/updates/test.pub").trim())
+            .version_comparator(|_, _| true).executable_path(&executable).build().unwrap()
+            .restore_update(json!({"version":"1.0.3-mac.5","url":"https://github.com/kyrie25/wuwa-tappo-mac/test.tar.gz","signature":include_str!("../../tests/fixtures/updates/test.app.tar.gz.sig").trim()})).unwrap().unwrap();
+        assert!(update.install(b"tampered archive").is_err());
+        assert_eq!(
+            std::fs::read_to_string(&executable).unwrap(),
+            "old test app"
+        );
+        update
+            .install(include_bytes!(
+                "../../tests/fixtures/updates/test.app.tar.gz"
+            ))
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&executable).unwrap(),
+            "new test app\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&data).unwrap(),
+            "preserve user data"
+        );
+        assert_eq!(
+            std::fs::metadata(&bundle).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

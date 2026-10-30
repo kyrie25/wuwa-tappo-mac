@@ -127,6 +127,17 @@ df -h "$STAGE" "$OUTPUT"
 hdiutil create -fs HFS+ -size "${IMAGE_SIZE_MIB}m" -volname "$PRODUCT_NAME" -srcfolder "$STAGE/dmg" -format UDZO "$STAGE/$NAME.dmg"
 phase 'Verify DMG'
 hdiutil verify "$STAGE/$NAME.dmg"
+if [ -n "${WUWA_FORK_VERSION:-}" ]; then
+  phase 'Create signed updater package'
+  test -n "${TAURI_SIGNING_PRIVATE_KEY:-}"
+  [[ "$WUWA_FORK_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-mac\.[0-9]+$ ]]
+  COPYFILE_DISABLE=1 tar -czf "$STAGE/$NAME.app.tar.gz" -C "$STAGE/dmg" "$PRODUCT_NAME.app"
+  # Bind the signed bytes to the fork revision, independently of the resource version.
+  node "$ROOT/node_modules/@tauri-apps/cli/tauri.js" signer sign \
+    --password '' --app-version "${WUWA_FORK_VERSION#v}" "$STAGE/$NAME.app.tar.gz" >/dev/null
+  test -s "$STAGE/$NAME.app.tar.gz.sig"
+  mv "$STAGE/$NAME.app.tar.gz" "$STAGE/$NAME.app.tar.gz.sig" "$OUTPUT/"
+fi
 phase 'Deliver packages'
 mv "$STAGE/$NAME.zip" "$STAGE/$NAME.dmg" "$OUTPUT/"
 printf 'Complete %s packages:\n%s\n%s\n' "$REGION_LABEL" "$OUTPUT/$NAME.zip" "$OUTPUT/$NAME.dmg"

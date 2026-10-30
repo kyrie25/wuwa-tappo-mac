@@ -63,13 +63,16 @@ export function patchMacUpdater(source) {
     checkForAppUpdate: 'async function checkForAppUpdate(options){return window.__WUWATAPPO_UPDATER__.check(options)}',
     resolveUpdaterLatestJsonUrl: 'async function resolveUpdaterLatestJsonUrl(){return "https://api.github.com/repos/kyrie25/wuwa-tappo-mac/releases?per_page=100"}',
     fetchUpdaterManifest: 'async function fetchUpdaterManifest(){return null}',
-    downloadAndInstallAppUpdate: 'async function downloadAndInstallAppUpdate(){throw new Error("Use Check for Updates to download the Mac package, then quit and replace this app.")}',
+    downloadAndInstallAppUpdate: 'async function downloadAndInstallAppUpdate(){throw new Error("Use Check for Updates to install the signed Mac update or download the Mac package.")}',
   };
   const tree = parse(source, { sourceType: 'module', ecmaVersion: 'latest' });
   const targets = tree.body.filter(node => node.type === 'FunctionDeclaration' && Object.hasOwn(replacements, node.id.name));
   if (targets.length !== Object.keys(replacements).length) throw new Error('Original updater flow changed; reconcile the Mac update path before building.');
   for (const node of targets.sort((a, b) => b.start - a.start)) source = source.slice(0, node.start) + replacements[node.id.name] + source.slice(node.end);
-  return source;
+  for (const name of ['requestPersistClicksBeforeExit', 'requestDisconnectSocketBeforeExit']) {
+    if (!tree.body.some(node => node.type === 'FunctionDeclaration' && node.id.name === name)) throw new Error('Original shutdown flow changed; reconcile update persistence before building.');
+  }
+  return source + '\nObject.defineProperty(window,"__WUWATAPPO_UPDATE_SHUTDOWN__",{value:async()=>{await requestPersistClicksBeforeExit();await requestDisconnectSocketBeforeExit();await window.__WUWATAPPO_SESSION__.flush()}});';
 }
 
 export function patchMacAbout(source, region = 'CN') {

@@ -22,7 +22,7 @@ Both apps can be installed together. Login data, settings, counters and Keychain
 - **Included resources:** Each package includes its regional interface and embedded assets. No separate EXE download or extraction is needed. Login, asset updates and online features require internet access.
 - **First launch:** These builds are not notarized by Apple. If macOS blocks the app, verify its source, then use System Settings → Privacy & Security → Open Anyway.
 - **Input counting:** Ordinary key presses and supported mouse clicks work without Input Monitoring or Accessibility permission. Held-key autorepeat, modifier-only presses and media keys do not add keyboard counts. See [how permission-free input works](docs/PERMISSION_FREE_INPUT.md).
-- **Login:** CN uses the official embedded login; Global uses official browser login with a callback to the app. At startup, choose **This Session Only** or **Remember Login** using macOS Keychain.
+- **Login:** CN uses the official embedded login; Global uses official browser login with a callback to the app. Login is remembered automatically using macOS Keychain; no startup storage-choice prompt is shown. macOS may still request Keychain authorization.
 - **Language:** App-owned menus, prompts and bundled interface text are English. Login pages, announcements and other content served by Kuro may use the service's language. Character artwork and audio remain the original assets.
 
 Quit the old app before replacing it in Applications. Avoid running multiple copies. If input stops responding after an update, use **Restart Input Counting** in the menu or restart the app. Existing Input Monitoring or Accessibility grants are unnecessary for counting and can be removed in System Settings.
@@ -40,7 +40,7 @@ Quit the old app before replacing it in Applications. Avoid running multiple cop
 
 The upstream project previously verified CN startup, official login, room creation and leaving on a real Mac, and Global startup, About and settings panels. Global browser login, real account callbacks and two-player multiplayer still need hands-on acceptance testing. Input counting uses public aggregate keyboard counters and mouse-only AppKit monitors without a permission prompt. Controller support uses Apple's GameController API and needs a physical controller test. Chest claims, synthesis, redemption codes and multi-monitor combinations have not been comprehensively verified. Rewards use official services; the app does not simulate rewards locally.
 
-**Check for Updates** checks this fork’s GitHub Releases and compares the full Mac release revision. When an update is available, download the matching regional package, quit the app normally, and replace the same app in Applications. Settings, counters and login-storage choices stay in their existing locations. Source builds without a release identity show the latest published build without claiming they are up to date. See [the Mac update flow](docs/MAC_UPDATES.md).
+**Check for Updates** checks this fork’s GitHub Releases and compares the full Mac release revision. When a signed update is available, **Update and Restart** downloads, verifies and installs the matching regional app, then relaunches it. Users on mac.4 or earlier must manually install the first automatic-updater release once. Manual DMG/ZIP downloads remain available. Settings, counters and remembered login are preserved. Source builds without a release identity show the latest published build without claiming they are up to date. See [the Mac update flow](docs/MAC_UPDATES.md).
 
 ## Build from source
 
@@ -86,7 +86,7 @@ Built apps are under `src-tauri/target/release/bundle/macos/`; distribution pack
 ## CI, releases and official version synchronization
 
 - **Commits and pull requests:** Each region independently downloads assets, runs JavaScript and Rust tests, builds the native app and packages ZIP/DMG files. Caches and artifacts are isolated by region.
-- **Releases:** A `v*` tag (for example `v1.0.3-mac.1`) runs checks for both regions. All four packages are published in one release only after both pass. Manual releases are also supported.
+- **Releases:** A `v*` tag (for example `v1.0.3-mac.1`) runs checks for both regions. All regional DMG/ZIP and signed updater packages are published in one release only after both pass. Verified app changes receive a release by default; purely CI changes and explicit user exceptions do not. Manual releases are also supported.
 - **Official synchronization:** Daily jobs check each official service. Compatible updates produce an update PR; extracted versions that need adaptation produce a draft with contract differences and failure logs. Failures create a regional issue. Unverified versions are never automatically released.
 - **Resource cache:** CI downloads installers from official sources and caches them by region and resource lock. Every reuse verifies the official SHA-256 and size. Installers are never published as release assets; releases contain the Mac app packages.
 
@@ -101,10 +101,12 @@ npm run test:rust
 npm run build
 ```
 
+See [the port adaptation record](docs/MAC_PORT.md) for the native bridge, English preparation, regional separation, session/counter storage, input, shortcuts and update implementation. Every future port adaptation must update that record or its linked implementation guide.
+
 See [synchronization troubleshooting](docs/SYNCHRONIZATION.md) for the 1.0.3 extraction failure and the steps required before adopting a new official version. Accepted contract snapshots describe the unmodified official frontend. Review contract changes before updating those snapshots; English preparation happens afterward.
 
 ## Privacy and licensing
 
-Packages contain no maintainer credentials, Keychain contents, account caches, click history or logs. **This Session Only** keeps credentials out of Keychain. **Remember Login** stores them in the system Keychain. Native input monitoring responds to key presses/clicks without recording typed text.
+Packages contain no maintainer credentials, Keychain contents, account caches, click history or logs. Normal launches remember credentials in the system Keychain. Explicit test launches with `--session-only` keep credentials in memory. Native input monitoring responds to key presses/clicks without recording typed text.
 
 Original macOS backend and adaptation tools use the [MIT License](LICENSE). Official interface, characters, artwork, audio and third-party dependencies retain their original rights and licenses; bundling does **not** relicense them under MIT. See [third-party notices](THIRD_PARTY_NOTICES.md).

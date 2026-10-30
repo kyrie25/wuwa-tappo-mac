@@ -537,6 +537,11 @@ pub fn dispatch(app: &AppHandle, command: &str, args: &Value) -> Option<Result<V
             }
         }
         "check_app_update" => crate::updater::check(app),
+        "download_mac_update" | "install_mac_update" => match args.get("version").and_then(Value::as_str) {
+            Some(version) if command == "download_mac_update" => crate::updater::download(app, version),
+            Some(version) => crate::updater::install(app, version),
+            None => Err("Missing update version".into()),
+        },
         "get_mac_build_info" => Ok(crate::updater::build_info()),
         "open_mac_update" => match (args.get("action").and_then(Value::as_str), args.get("version").and_then(Value::as_str)) {
             (Some(action), Some(version)) => crate::updater::open(app, action, version),

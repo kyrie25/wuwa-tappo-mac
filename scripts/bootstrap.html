@@ -11,20 +11,16 @@
   footer{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
   button{font:inherit;padding:7px 18px;border-radius:7px;border:1px solid GrayText;background:ButtonFace;color:ButtonText;cursor:pointer}
   button:disabled{opacity:.5;cursor:default}
-  #memory{background:AccentColor;color:AccentColorText;border-color:AccentColor}
 </style>
 <h1>Wuwa Tappo · CN</h1>
-<p id="status">This session only: credentials stay in memory and are cleared on exit.
-Remember login: store credentials in macOS Keychain; system authorization is required.</p>
-<footer><button id="quit">Quit</button><button id="keychain">Remember Login</button><button id="memory">This Session Only</button></footer>
+<p id="status">Starting with remembered login in macOS Keychain…</p>
+<footer><button id="quit">Quit</button><button id="retry" hidden>Try Again</button></footer>
 <script>
   const api=window.__TAURI__;
-  const status=document.getElementById('status'),memory=document.getElementById('memory'),keychain=document.getElementById('keychain');
-  const update=event=>{status.textContent=event.payload.message;memory.disabled=keychain.disabled=event.payload.loading;};
-  api.event.listen('mac-startup-status',update).then(()=>api.core.invoke('get_startup_status')).then(payload=>update({payload})).catch(error=>{status.textContent=String(error)});
-  const start=async mode=>{memory.disabled=keychain.disabled=true;try{await api.core.invoke('start_session',{mode})}catch(error){status.textContent=String(error);memory.disabled=keychain.disabled=false}};
-  memory.onclick=()=>start('memory');
-  keychain.onclick=()=>start('keychain');
+  const status=document.getElementById('status'),retry=document.getElementById('retry');
+  const update=event=>{status.textContent=event.payload.message;retry.disabled=event.payload.loading;retry.hidden=!event.payload.failed;};
+  api.event.listen('mac-startup-status',update).then(()=>api.core.invoke('get_startup_status')).then(payload=>update({payload})).catch(error=>{status.textContent=String(error);retry.hidden=false});
+  retry.onclick=async()=>{retry.disabled=true;try{await api.core.invoke('start_session')}catch(error){status.textContent=String(error);retry.disabled=false}};
   document.getElementById('quit').onclick=()=>api.core.invoke('exit_app');
 </script>
 </html>

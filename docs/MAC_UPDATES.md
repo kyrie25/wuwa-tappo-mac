@@ -2,30 +2,61 @@
 
 ## User flow
 
-Settings → **Check for Updates** queries this fork’s public GitHub Releases, without a GitHub token. The dialog shows the installed fork version and one of: checking, up to date, update available, no published release, or a retryable failure. Failed requests never become “up to date.” Repeated checks in one window share a pending request; simultaneous checks in another window receive a retry message.
+Settings → **Check for Updates** queries this fork's public GitHub Releases without a GitHub token. It compares the installed fork revision and shows checking, up to date, available, no release, development build or retryable failure. Network failures never become “up to date.”
 
-For an available update, **Download DMG** (or ZIP when the DMG is absent) opens the package for the running app’s CN/Global region and Apple Silicon architecture in the browser. **Release Notes** opens that release on GitHub. Quit the app normally before replacing the same regional app in Applications. Keep its bundle identifier unchanged; settings, counters, regional isolation and login-storage preferences stay in their existing locations. The update flow does not clear data, log out, force-quit or restart the app.
+**Update and Restart** downloads the matching signed regional archive inside the app, shows progress and verifies both its bytes and signed fork version. Only then does it request persistence/disconnection through the original frontend's bounded shutdown hooks and flush the session. These hooks retain the original timeout and error-reporting behavior; they do not establish real-account persistence acceptance. Native Tauri installation replaces the app bundle and relaunches it. macOS may request administrator approval when the installation location requires it. Failed downloads/signatures never install or restart; save/install failures keep the app open with retry and manual-download controls. The app's bundle identifier, counters, settings and Keychain credentials are preserved. Normal startup remembers login automatically without a storage-choice prompt. Explicit session-only test launches are in-memory; restarting ends that test session.
 
-Installation is manual. Developer ID signing/notarization is tracked in [issue #3](https://github.com/kyrie25/wuwa-tappo-mac/issues/3). Tauri updater signatures are a separate requirement for any future in-app installer. This implementation creates no updater resource ID and never calls the Windows installer or Tauri updater installation commands.
+**Download DMG/ZIP** and **Release Notes** remain browser actions. The manual flow is also used for older releases without updater archives and for development builds without a release identity. Quit normally before replacing the same regional app in Applications.
 
-## Fork release identity
+Users on mac.4 or earlier must manually install the first automatic-updater release once. Their existing binaries cannot acquire an installer they do not contain. Automatic installation is initiated by **Update and Restart**; checking alone never silently replaces the app.
 
-The official resource version (`1.0.3`, for example) is separate from the fork release (`v1.0.3-mac.4`). CI derives `WUWA_FORK_VERSION` from the checked-out release ref and embeds it at Rust compile time. The build script rejects a tag whose base version differs from Cargo’s resource version, malformed revisions, leading zeros and overflow. Tags use `vMAJOR.MINOR.PATCH-mac.REVISION`; all four components compare numerically. `mac.10` follows `mac.9`, and `v1.0.4-mac.1` follows `v1.0.3-mac.99`.
+## Discovery and trust
 
-Ordinary branch/source builds omit the release identity. Their dialog says **Development build** and offers the latest published package without claiming an upgrade or an up-to-date state. When reproducing a tagged build locally, check out that tag and export its exact `WUWA_FORK_VERSION` before building. `get_mac_build_info` exposes the fork and resource versions independently.
+`src-tauri/src/updater.rs` fixes discovery to `kyrie25/wuwa-tappo-mac` and considers the 100 most recent releases. Drafts, GitHub prereleases and non-Mac tags are excluded; the highest numeric stable fork version wins. Keep the current stable Mac release in that window. Metadata is limited to 2 MiB with a 15-second timeout. Repeated checks within a window share their pending request; native check/download/install operations are serialized. A new check discards a previously prepared update. Actions must match the displayed version retained by the backend; the frontend cannot supply arbitrary URLs, signatures, keys or installation paths.
 
-## Release publishing contract
+Uploaded packages require exact regional names and exact fork/tag HTTPS URLs, uploaded state and nonzero size. Incomplete/ambiguous packages are errors. A bounded 300-second native download allows GitHub's HTTPS asset redirects, checks the exact declared size and limits an archive to 512 MiB and a signature to 16 KiB. Progress events contain only version and byte totals. Verified bytes are retained in memory until installation or the next check; no private download cache is created.
 
-- Discovery is fixed in the native backend to `kyrie25/wuwa-tappo-mac`, querying the 100 most recent releases. Drafts, GitHub prereleases and tags outside the Mac version format are excluded. The highest numeric valid stable version is selected. Keep the current stable Mac release among these recent releases.
-- Uploaded packages must retain `WuwaTappo-CN-Mac-BASE-arm64.dmg` / `.zip` and `WuwaTappo-Global-Mac-BASE-arm64.dmg` / `.zip` names, where BASE matches the tag’s official resource version. Download and release URLs must match this repository and selected tag exactly. Zero-size, unfinished, ambiguous or missing regional packages are explicit errors; an incomplete new release is not silently replaced by an older one.
-- Release notes must contain `<!-- wuwa-mac-minimum: 13.0 -->` with the actual minimum supported macOS version. CI’s release notes include it, and a regression test checks it against both regional Tauri configurations. Update both when raising the minimum OS. The dialog hides this metadata line. Legacy tags `v1.0.3-mac.1` through `v1.0.3-mac.3` predate the marker and are known to require macOS 13; newer releases without valid metadata fail compatibility checks.
-- Current builds offer Apple Silicon packages only. Unsupported architectures and insufficient/unknown macOS versions produce clear errors before an update is offered.
-- Public release publication still depends on both regions passing CI. Publish only the Mac packages; official resource installers remain outside GitHub Releases.
+The native Tauri updater is pinned to 2.14.1. `restore_update` builds a native update from the already validated release and requires the signature to bind the announced fork version. The package is verified after download and again on install. Separate embedded CN/Global public keys prevent a signed package from the other region being accepted. No updater installation capability is granted to frontend plugin commands; the custom native commands control selection and ordering. The library requires a configured endpoint to construct the updater, so its endpoint is the same fixed fork API; installation uses `restore_update`, not the plugin endpoint-check parser. Installation uses the updater's macOS bundle swap/backup/restore implementation; native restart runs normal app cleanup. No custom unsigned replacement script is used.
 
-## Implementation and verification
+Updater signatures use project-owned keys and are independent of Apple Developer ID signing/notarization. Current apps remain ad-hoc signed and not notarized. Apple signing is planned in [issue #3](https://github.com/kyrie25/wuwa-tappo-mac/issues/3).
 
-`src-tauri/src/updater.rs` owns fixed-source HTTP discovery, bounded responses, a 15-second timeout, rate-limit errors, numeric comparison, compatibility and package selection. It retains the validated result in memory; the browser-open command accepts an action and the displayed version, never an arbitrary frontend URL. A changed or expired selection requires a fresh check. The compatibility `check_app_update` command ignores the original frontend’s manifest endpoint.
+## Fork version and compatibility
 
-`scripts/mac-updater.js` provides the English download dialog, using the app’s English font, original update background artwork, cream/brown palette and rounded raised buttons. Frontend preparation locates the regional background asset and fails explicitly if that asset contract changes. Frontend preparation replaces the official Windows check/install path and handles its external-download result in Settings. Release notes are displayed as plain text. Official service endpoints used for account/resource synchronization are unchanged.
+CI embeds `WUWA_FORK_VERSION` from the exact release ref, separately from Cargo's official resource version. Tags use `vMAJOR.MINOR.PATCH-mac.REVISION`; all four components compare numerically, so mac.10 follows mac.9. The build script rejects malformed/overflowed revisions, leading zeros and resource-version mismatches. Source builds show **Development build** and require manual installation rather than claiming a release identity.
 
-Rust tests cover version ordering, release filtering, missing metadata, package validation and OS/architecture selection. JavaScript tests exercise the real regional updater patch, error/retry states, request deduplication and safe browser actions. Rendered Settings checks should cover both regions with controlled available/equal/absent/error responses and confirm that no Windows/Tauri installer commands or forced exits occur.
+The native fork comparator decides eligibility before creating the Tauri update. This is necessary because the resource version remains 1.0.3 while fork releases such as 1.0.3-mac.5 use a distinct revision. The signature is bound to that full fork version, not 1.0.3.
+
+Release notes require `<!-- wuwa-mac-minimum: 13.0 -->` with the actual minimum supported OS. A test checks it against regional configurations; the dialog hides the metadata line. Legacy mac.1–mac.3 have a documented macOS 13 fallback. Newer missing/invalid metadata, unsupported architecture and insufficient/unknown OS versions fail compatibility checks. Only Apple Silicon is currently packaged.
+
+## CI publishing contract
+
+For each region and official BASE version, publish:
+
+- `WuwaTappo-REGION-Mac-BASE-arm64.dmg`
+- `WuwaTappo-REGION-Mac-BASE-arm64.zip`
+- `WuwaTappo-REGION-Mac-BASE-arm64.app.tar.gz`
+- `WuwaTappo-REGION-Mac-BASE-arm64.app.tar.gz.sig`
+
+REGION is `CN` or `Global`; the release has eight files total. DMG/ZIP remain the human installation packages. The archive contains the same verified regional `.app`. `scripts/package-macos.sh` signs the archive with Tauri CLI `signer sign --app-version` using the full fork version without its leading `v`. Plain `tauri build` would otherwise use the resource version, which would fail the required signed-version check. The `.sig` contains the signed version and signature, never a private key. The existing GitHub release response and signature assets provide updater metadata; no separate hosted update server is required.
+
+The reusable build workflow accepts regional updater secrets, exposed only to packaging. Release passes them explicitly through the reusable-workflow secret contract. Ordinary branch/PR builds can test and package DMG/ZIP without access to signing secrets; tagged packaging fails if its signing key is missing. Publication checks all eight artifacts after both regional tests/builds/package jobs pass. Official installers must never be uploaded as release assets.
+
+## Key management
+
+Public keys are committed in `src-tauri/updater-cn.pub` and `updater-global.pub`. Protected local private-key backups were created outside the repository under `$HOME/.config/wuwa-tappo-mac/updater-cn.key` and `updater-global.key` (directory mode 0700; files 0600). GitHub Actions secrets are `WUWA_UPDATER_KEY_CN` and `WUWA_UPDATER_KEY_GLOBAL`. Private key material must never enter Git, logs, screenshots, release assets or the knowledge base. Keep a secure maintainer backup; losing a key prevents signing updates trusted by installed builds.
+
+Do not regenerate keys per build. Key rotation requires an update trusted by the existing key that installs the replacement public key, or a manual reinstall. Region keys must stay separate. Recover keys through protected files/secret administration without printing their contents. Updating an app's updater key does not supply Apple signing/notarization credentials.
+
+## Verification
+
+Both CN and Global passed 138 JavaScript tests and 78 Rust tests for the automatic-updater/default-Keychain change on 2026-10-31. Rendered Settings checks passed at desktop and narrow sizes in both regions, including progress, signature failure, retry, manual fallback and shutdown ordering. The startup loading/error view has no storage-choice controls. Isolated CN and Global debug apps also passed real WKWebView startup checks: default Keychain mode, synthetic session write/delete, live fork-version discovery, input running without required permission, shortcut save/restore/duplicate rejection and pet layout. Test identities and diagnostics stayed outside release sources.
+
+Rust tests exercise numeric version ordering, filtering, OS/architecture checks, exact regional URLs, complete archive/signature selection, bounded/truncated downloads, real signature verification, wrong keys, signed-version mismatch and tampering. An isolated filesystem test uses the actual Tauri macOS installer to replace a disposable test bundle, confirms tampered bytes leave it unchanged and checks that data outside the bundle survives. Disposable signed fixtures retain only public keys, signatures and test payloads; their private key is deleted.
+
+JavaScript tests and rendered Settings checks cover available/equal/absent/error/development states, progress, duplicate actions, retry/manual fallback and the download → verify → save → install ordering. Native WKWebView checks and release-asset verification are recorded with the release evidence when completed. Full real-account persistence, administrator-authorized replacement, Gatekeeper behavior across macOS releases and recovery from power loss remain distinct acceptance cases; never infer them from a mocked dialog or disposable-bundle test.
+
+## Sources
+
+- [Tauri updater documentation](https://v2.tauri.app/plugin/updater/)
+- [Pinned updater implementation](https://docs.rs/tauri-plugin-updater/2.14.1/tauri_plugin_updater/)
+- [Port adaptation record](MAC_PORT.md)

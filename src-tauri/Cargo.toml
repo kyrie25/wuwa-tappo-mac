@@ -2,7 +2,7 @@
 name = "wuwatappo-mac"
 version = "1.0.3"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.90"
 
 [lib]
 name = "wuwatappo_mac"
@@ -31,6 +31,7 @@ futures-util = { version = "0.3", features = ["sink"] }
 tokio = { version = "1", features = ["macros", "net", "sync", "time"] }
 tokio-tungstenite = { version = "=0.26.2", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "=2.14.1"
 
 [profile.release]
 strip = true
@@ -39,3 +40,6 @@ codegen-units = 1
 
 [profile.release.build-override]
 strip = "none"
+
+[dev-dependencies]
+tauri = { version = "=2.12.1", features = ["test"] }

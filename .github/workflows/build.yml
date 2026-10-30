@@ -8,6 +8,11 @@ on:
         required: false
         type: string
         default: ''
+    secrets:
+      WUWA_UPDATER_KEY_CN:
+        required: false
+      WUWA_UPDATER_KEY_GLOBAL:
+        required: false
 
 permissions:
   contents: read
@@ -23,8 +28,10 @@ jobs:
         include:
           - region: cn
             artifact: CN
+            signing_secret: WUWA_UPDATER_KEY_CN
           - region: global
             artifact: Global
+            signing_secret: WUWA_UPDATER_KEY_GLOBAL
     env:
       WUWA_REGION: ${{ matrix.region }}
       MACOSX_DEPLOYMENT_TARGET: '13.0'
@@ -86,7 +93,9 @@ jobs:
           npm run test:rust
       - name: Build complete application
         run: npm run build -- -- --locked
-      - name: Verify and package ZIP and DMG
+      - name: Verify and package ZIP, DMG and signed updates
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets[matrix.signing_secret] }}
         run: |
           set -o pipefail
           npm run package 2>&1 | tee .work/package-macos.log
@@ -104,6 +113,8 @@ jobs:
           path: |
             dist/*.zip
             dist/*.dmg
+            dist/*.app.tar.gz
+            dist/*.app.tar.gz.sig
           if-no-files-found: error
           retention-days: 14
       - name: Save compiled Cargo dependencies

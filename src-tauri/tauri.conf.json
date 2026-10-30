@@ -15,6 +15,9 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": { "pubkey": "", "requireSignedVersion": true, "endpoints": ["https://api.github.com/repos/kyrie25/wuwa-tappo-mac/releases?per_page=100"] }
+  },
   "bundle": {
     "active": true,
     "targets": ["app"],

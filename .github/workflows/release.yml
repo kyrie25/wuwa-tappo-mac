@@ -20,6 +20,7 @@ concurrency:
 jobs:
   build:
     uses: ./.github/workflows/build.yml
+    secrets: inherit
     with:
       ref: ${{ github.event.inputs.tag || github.ref }}
   publish:
@@ -43,7 +44,7 @@ jobs:
           set -euo pipefail
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-mac\.[0-9]+$ ]]
           for REGION in CN Global; do
-            for EXT in zip dmg; do
+            for EXT in zip dmg app.tar.gz app.tar.gz.sig; do
               PACKAGES=(dist/WuwaTappo-"$REGION"-Mac-*-arm64."$EXT")
               [[ ${#PACKAGES[@]} -eq 1 && -f "${PACKAGES[0]}" ]]
             done
@@ -59,9 +60,11 @@ jobs:
 
           - Apple Silicon; macOS 13 or later.
           - English interface and native prompts, including update feedback.
-          - Check for Updates discovers this fork’s releases, compares full Mac revisions and offers the matching regional download.
-          - Update dialog uses the app’s artwork, English font and cream/brown styling; installation uses a browser download and manual app replacement.
+          - Check for Updates discovers this fork’s releases, compares full Mac revisions and offers a signed regional update with Update and Restart.
+          - Update dialog uses the app’s artwork, English font and cream/brown styling; automatic installation verifies signed bytes and the fork version, saves counters/session, then replaces and relaunches the app.
           - Update flow and publishing requirements: https://github.com/kyrie25/wuwa-tappo-mac/blob/main/docs/MAC_UPDATES.md
+          - Upgrade from mac.4 or earlier manually once to enable future in-app updates. DMG/ZIP downloads remain available.
+          - Login is remembered in macOS Keychain automatically; the app no longer asks you to choose storage at startup.
           - Official 1.0.3 resources for both regions.
           - Configurable global shortcuts with Cmd/Option labels, capture and persistence.
           - Keyboard counting and mouse interactions without Input Monitoring or Accessibility permission.
@@ -71,10 +74,10 @@ jobs:
           - No personal credentials, click history or account caches are included.
           - Community maintained and unofficial. Official assets retain their original ownership, and accounts, rewards and service rules are controlled by Kuro Games.
 
-          ZIP and DMG contain the same app for each region (four files in total). Publication requires passing tests, native builds and packaging for both regions. Real account login and multiplayer still require hands-on verification.
+          ZIP and DMG contain the same app for each region. Additional .app.tar.gz packages and .sig files support automatic updates (eight files in total). Publication requires passing tests, native builds and packaging for both regions. Real account login and multiplayer still require hands-on verification.
           NOTES
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/*.zip dist/*.dmg --clobber
+            gh release upload "$TAG" dist/*.zip dist/*.dmg dist/*.app.tar.gz dist/*.app.tar.gz.sig --clobber
           else
-            gh release create "$TAG" dist/*.zip dist/*.dmg --verify-tag --title "Wuwa Tappo Mac CN / Global $TAG" --notes-file /tmp/release-notes.md --latest
+            gh release create "$TAG" dist/*.zip dist/*.dmg dist/*.app.tar.gz dist/*.app.tar.gz.sig --verify-tag --title "Wuwa Tappo Mac CN / Global $TAG" --notes-file /tmp/release-notes.md --latest
           fi

@@ -8,23 +8,24 @@ import { findSource } from './frontend-context.mjs';
 
 const bridge = await readFile(new URL('../scripts/mac-updater.js', import.meta.url), 'utf8');
 
-function runtime(handler) {
+function runtime(handler, {shutdownError} = {}) {
   const fields = new Map();
   const calls = [];
-  const dialog = { open: false, setAttribute() {}, showModal() { this.open = true; }, close() { this.open = false; },
+  const dialog = { open: false, setAttribute() {}, addEventListener() {}, showModal() { this.open = true; }, close() { this.open = false; },
     querySelector(selector) {
       const key = selector.match(/"(\w+)"/)[1];
       if (!fields.has(key)) fields.set(key, { hidden: false, textContent: '', disabled: false });
       return fields.get(key);
     },
   };
-  const window = { __TAURI_INTERNALS__: { invoke(command, args) {
+  const events = [];
+  const window = { __WUWATAPPO_UPDATE_SHUTDOWN__: async () => { calls.push({command:'shutdown'}); if(shutdownError)throw new Error(shutdownError); }, __TAURI__: {event:{listen:async (_name, listener) => {events.push(listener);return () => calls.push({command:'unlisten'});}}}, __TAURI_INTERNALS__: { invoke(command, args) {
     calls.push({ command, args });
     if (command === 'get_mac_build_info') return Promise.resolve({ forkVersion: '1.0.3-mac.3', resourceVersion: '1.0.3' });
     return Promise.resolve().then(() => handler(command, args));
   } } };
   vm.runInNewContext(bridge, { window, document: { createElement: () => dialog, body: { append() {} } } });
-  return { check: window.__WUWATAPPO_UPDATER__.check, fields, calls, dialog };
+  return { check: window.__WUWATAPPO_UPDATER__.check, fields, calls, dialog, events };
 }
 const available = { status: 'available', currentVersion: '1.0.3-mac.3', resourceVersion: '1.0.3', release: {
   version: '1.0.3-mac.4', assetName: 'WuwaTappo-CN-Mac-1.0.3-arm64.dmg', notes: '<script>text only</script>',
@@ -118,4 +119,70 @@ test('release metadata minimum matches both regional configurations', async () =
   const minimum = workflow.match(/<!-- wuwa-mac-minimum: ([\d.]+) -->/)?.[1];
   assert.equal(minimum, base.bundle.macOS.minimumSystemVersion);
   assert.equal(minimum, global.bundle.macOS.minimumSystemVersion ?? base.bundle.macOS.minimumSystemVersion);
+});
+
+
+test('signed updates download and verify before saving state and installing', async () => {
+  const view = runtime(() => ({ ...available, release:{...available.release, canInstall:true} }));
+  await view.check({interactive:true});
+  assert.equal(view.fields.get('install').hidden,false);
+  view.calls.length=0;
+  await view.fields.get('install').onclick();
+  assert.deepEqual(view.calls.map(c=>c.command), ['download_mac_update','shutdown','install_mac_update','unlisten']);
+  assert.equal(view.calls[0].args.version, '1.0.3-mac.4');
+});
+
+test('failed verification cannot shut down or install and exposes retry/manual download', async () => {
+  const view = runtime(command => {
+    if(command==='download_mac_update')throw new Error('Signature verification failed');
+    return {...available,release:{...available.release,canInstall:true}};
+  });
+  await view.check({interactive:true});
+  await view.fields.get('install').onclick();
+  assert.equal(view.fields.get('title').textContent,'Could Not Install Update');
+  assert.equal(view.fields.get('retry').hidden,false);
+  assert.equal(view.fields.get('download').disabled,false);
+  assert(!view.calls.some(c=>c.command==='shutdown'||c.command==='install_mac_update'));
+});
+
+test('session flush failure prevents installation and leaves the app open', async () => {
+  const view=runtime(()=>({...available,release:{...available.release,canInstall:true}}),{shutdownError:'Session could not be saved'});
+  await view.check({interactive:true});await view.fields.get('install').onclick();
+  assert.match(view.fields.get('status').textContent,/Session could not be saved/);
+  assert(!view.calls.some(c=>c.command==='install_mac_update'));
+  assert.equal(view.dialog.open,true);
+});
+
+test('the actual regional patch preserves the original counter/socket shutdown hooks', () => {
+  const {source}=findSource(content=>content.includes('async function checkForAppUpdate('));
+  const patched=patchMacUpdater(source);
+  assert.match(patched,/await requestPersistClicksBeforeExit\(\);await requestDisconnectSocketBeforeExit\(\);await window\.__WUWATAPPO_SESSION__\.flush\(\)/);
+});
+
+
+test('a failed native install leaves retry and manual download available', async () => {
+  const view=runtime(command=>{
+    if(command==='install_mac_update')throw new Error('Could not replace the app');
+    return {...available,release:{...available.release,canInstall:true}};
+  });
+  await view.check({interactive:true});await view.fields.get('install').onclick();
+  assert.equal(view.fields.get('title').textContent,'Could Not Install Update');
+  assert.equal(view.fields.get('retry').hidden,false);
+  assert.equal(view.fields.get('download').disabled,false);
+  assert.equal(view.dialog.open,true);
+});
+
+test('repeated install clicks and checks cannot start a second download', async () => {
+  let finish;
+  const wait=new Promise(resolve=>finish=resolve);
+  const view=runtime(command=>command==='download_mac_update'?wait:({...available,release:{...available.release,canInstall:true}}));
+  await view.check({interactive:true});
+  const install=view.fields.get('install').onclick();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(view.fields.get('close').disabled,true);
+  await view.fields.get('install').onclick();await view.check({interactive:true});
+  view.events[0]({payload:{version:'1.0.3-mac.4',downloaded:20,total:100}});
+  assert.match(view.fields.get('status').textContent,/20%/);
+  assert.equal(view.calls.filter(c=>c.command==='download_mac_update').length,1);
+  finish(null);await install;
 });

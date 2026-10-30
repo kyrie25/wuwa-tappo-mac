@@ -1,32 +1,16 @@
-use serde::{Deserialize, Serialize};
-use std::{fs, io::ErrorKind, path::Path};
+use serde::Serialize;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionMode {
     Memory,
     Keychain,
 }
 
-pub fn load_mode(path: &Path) -> Result<Option<SessionMode>, String> {
-    match fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|error| format!("Invalid credential storage configuration: {error}")),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(format!("Could not read credential storage preference: {error}")),
+impl Default for SessionMode {
+    fn default() -> Self {
+        Self::Keychain
     }
-}
-
-pub fn save_mode(path: &Path, mode: SessionMode) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or("Session preference directory is unavailable")?;
-    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let bytes = serde_json::to_vec(&mode).map_err(|error| error.to_string())?;
-    let temporary = path.with_extension(format!("{}.tmp", std::process::id()));
-    fs::write(&temporary, bytes).map_err(|error| error.to_string())?;
-    fs::rename(&temporary, path).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -34,29 +18,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mode_names_are_explicit_and_unknown_modes_are_not_fallbacks() {
+    fn normal_launches_remember_login_and_explicit_test_sessions_remain_distinct() {
+        assert_eq!(SessionMode::default(), SessionMode::Keychain);
         assert_eq!(
-            serde_json::from_str::<SessionMode>("\"memory\"").unwrap(),
-            SessionMode::Memory
+            serde_json::to_string(&SessionMode::default()).unwrap(),
+            "\"keychain\""
         );
-        assert_eq!(
-            serde_json::from_str::<SessionMode>("\"keychain\"").unwrap(),
-            SessionMode::Keychain
-        );
-        assert!(serde_json::from_str::<SessionMode>("\"plaintext\"").is_err());
-    }
-
-    #[test]
-    fn preferences_keep_the_selected_mode_and_report_corruption() {
-        let root = std::env::temp_dir().join(format!("wuwa-mode-test-{}", std::process::id()));
-        let path = root.join("session-mode.json");
-        assert_eq!(load_mode(&path).unwrap(), None);
-        save_mode(&path, SessionMode::Memory).unwrap();
-        assert_eq!(load_mode(&path).unwrap(), Some(SessionMode::Memory));
-        save_mode(&path, SessionMode::Keychain).unwrap();
-        assert_eq!(load_mode(&path).unwrap(), Some(SessionMode::Keychain));
-        fs::write(&path, b"broken").unwrap();
-        assert!(load_mode(&path).is_err());
-        fs::remove_dir_all(root).unwrap();
+        assert_ne!(SessionMode::Memory, SessionMode::default());
     }
 }

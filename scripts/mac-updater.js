@@ -2,6 +2,7 @@
   let pending;
   let dialog;
   let displayedVersion;
+  let installing = false;
   const invoke = (command, args = {}) => window.__TAURI_INTERNALS__.invoke(command, args);
   const field = name => dialog.querySelector(`[data-update="${name}"]`);
   const message = error => typeof error === 'string' ? error : error?.message || 'Could not check for updates. Try again.';
@@ -18,17 +19,44 @@
         #wuwatappo-mac-update [data-update="installed"]{color:#8e7b6a}#wuwatappo-mac-update [data-update="status"]{font-weight:700}#wuwatappo-mac-update [data-update="instructions"],#wuwatappo-mac-update [data-update="asset"]{font-size:13px;color:#8e7b6a}
         #wuwatappo-mac-update pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;color:#5c4030;max-height:160px;overflow:auto;background:#fef6dd;border:2px solid #ebce9b;padding:12px 14px;border-radius:18px;margin:16px 0}
         #wuwatappo-mac-update footer{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:24px}#wuwatappo-mac-update button{box-sizing:border-box;flex:1 1 160px;min-height:44px;padding:6px 16px;border:2px solid #ebce9b;border-radius:22px;background:#ffe0a9;color:#8e5e43;box-shadow:0 2px #ebce9b;font:700 16px/1.4 var(--font-bold,inherit);cursor:pointer}
-        #wuwatappo-mac-update button[data-update="download"],#wuwatappo-mac-update button[data-update="retry"]{background:#c88865;color:#fdf9ed;border-color:#995e3f;box-shadow:0 2px #995e3f}#wuwatappo-mac-update button:focus-visible{outline:3px solid #8e5e43;outline-offset:3px}#wuwatappo-mac-update button:active{transform:translateY(2px);box-shadow:none}#wuwatappo-mac-update button:disabled{opacity:.5;cursor:wait}
+        #wuwatappo-mac-update button[data-update="install"],#wuwatappo-mac-update button[data-update="download"],#wuwatappo-mac-update button[data-update="retry"]{background:#c88865;color:#fdf9ed;border-color:#995e3f;box-shadow:0 2px #995e3f}#wuwatappo-mac-update button:focus-visible{outline:3px solid #8e5e43;outline-offset:3px}#wuwatappo-mac-update button:active{transform:translateY(2px);box-shadow:none}#wuwatappo-mac-update button:disabled{opacity:.5;cursor:wait}
         #wuwatappo-mac-update::-webkit-scrollbar,#wuwatappo-mac-update pre::-webkit-scrollbar{width:4px;background:#eed4b8;border-radius:4px}#wuwatappo-mac-update::-webkit-scrollbar-thumb,#wuwatappo-mac-update pre::-webkit-scrollbar-thumb{background:#ffdca8;border-radius:4px}
         @media(max-width:420px){#wuwatappo-mac-update{width:calc(100vw - 24px);max-height:calc(100vh - 24px);padding:24px;border-radius:32px}#wuwatappo-mac-update h2{font-size:22px}}
       </style><h2 id="wuwatappo-update-title" data-update="title">Check for Updates</h2>
       <p data-update="installed"></p><p data-update="status" role="status" aria-live="polite"></p>
       <pre data-update="notes" hidden></pre>
-      <p data-update="instructions" hidden>Download the package, quit this app normally, then replace the same regional app in Applications. Your settings, counters and login-storage preference stay in their existing locations.</p>
+      <p data-update="instructions" hidden>Download the package, quit this app normally, then replace the same regional app in Applications. Your settings, counters and remembered login are preserved.</p>
       <p data-update="asset" hidden></p>
-      <footer><button data-update="retry" hidden>Try Again</button><button data-update="release" hidden>Release Notes</button><button data-update="download" hidden>Download</button><button data-update="close">Close</button></footer>`;
+      <footer><button data-update="retry" hidden>Try Again</button><button data-update="release" hidden>Release Notes</button><button data-update="install" hidden>Update and Restart</button><button data-update="download" hidden>Download</button><button data-update="close">Close</button></footer>`;
       document.body.append(dialog);
-      field('close').onclick = () => dialog.close();
+      field('close').onclick = () => { if (!installing) dialog.close(); };
+      dialog.addEventListener('cancel', event => { if (installing) event.preventDefault(); });
+      field('install').onclick = async () => {
+        if (installing) return;
+        installing = true;
+        let unlisten;
+        for (const name of ['install', 'download', 'release', 'close', 'retry']) field(name).disabled = true;
+        field('title').textContent = 'Downloading Update';
+        field('status').textContent = 'Downloading and verifying the signed update…';
+        try {
+          unlisten = await window.__TAURI__.event.listen('mac-update-progress', ({ payload }) => {
+            if (payload.version === displayedVersion) field('status').textContent = `Downloading update… ${Math.floor(payload.downloaded / payload.total * 100)}%`;
+          });
+          await invoke('download_mac_update', { version: displayedVersion });
+          field('title').textContent = 'Installing Update';
+          field('status').textContent = 'Saving your counters and session, then installing and restarting…';
+          await window.__WUWATAPPO_UPDATE_SHUTDOWN__();
+          await invoke('install_mac_update', { version: displayedVersion });
+        } catch (error) {
+          field('title').textContent = 'Could Not Install Update';
+          field('status').textContent = message(error);
+          field('retry').hidden = false;
+        } finally {
+          unlisten?.();
+          installing = false;
+          for (const name of ['install', 'download', 'release', 'close', 'retry']) field(name).disabled = false;
+        }
+      };
       field('retry').onclick = () => check({ interactive: true });
       for (const [name, action] of [['release', 'notes'], ['download', 'download']]) {
         field(name).onclick = async () => {
@@ -41,8 +69,9 @@
         };
       }
     }
+    if (installing) return;
     displayedVersion = undefined;
-    for (const name of ['retry', 'release', 'download', 'notes', 'instructions', 'asset']) field(name).hidden = true;
+    for (const name of ['retry', 'release', 'download', 'install', 'notes', 'instructions', 'asset']) field(name).hidden = true;
     field('title').textContent = 'Checking for Updates';
     field('status').textContent = 'Checking this fork’s GitHub Releases…';
     if (!dialog.open) dialog.showModal();
@@ -63,6 +92,10 @@
         ? `Latest release: v${info.release.version}. This development build has no release identity to compare.`
         : `Available: v${info.release.version}`;
       displayedVersion = info.release.version;
+      field('install').hidden = !info.release.canInstall;
+      field('instructions').textContent = info.release.canInstall
+        ? 'Update and Restart downloads and verifies this regional app, saves your counters and session, then installs and relaunches it. macOS may ask for administrator approval. Your settings, counters and remembered login are preserved.'
+        : 'Download the package, quit this app normally, then replace the same regional app in Applications. This release or development build supports manual installation. Your settings, counters and remembered login are preserved.';
       field('notes').textContent = info.release.notes;
       field('asset').textContent = info.release.assetName;
       field('download').textContent = info.release.assetName.endsWith('.dmg') ? 'Download DMG' : 'Download ZIP';
@@ -71,6 +104,7 @@
   }
 
   async function check({ interactive = false } = {}) {
+    if (installing) return { kind: 'external', message: 'An update is already being installed.' };
     if (interactive) show();
     const request = pending ??= Promise.resolve().then(() => invoke('check_app_update'));
     try {
@@ -81,7 +115,7 @@
       const [info] = await Promise.all([request, identity]);
       if (interactive) render(info);
       if (info.status === 'upToDate') return { kind: 'none', currentVersion: info.currentVersion };
-      return { kind: 'external', message: info.release ? `Latest fork release: v${info.release.version}. Download it from the update dialog.` : 'No published Mac release is available.' };
+      return { kind: 'external', message: info.release ? `Latest fork release: v${info.release.version}. Open the update dialog to install or download it.` : 'No published Mac release is available.' };
     } catch (error) {
       const text = message(error);
       if (interactive) {

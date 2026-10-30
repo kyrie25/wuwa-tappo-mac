@@ -42,21 +42,18 @@ fn startup_status(app: &tauri::AppHandle) -> Value {
         .mode
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let failed = error.is_some();
     let message=error.unwrap_or_else(||match (loading,mode) {
         (true,Some(startup::SessionMode::Keychain))=>"Reading saved credentials…\nRespond to the macOS Keychain authorization prompt.".into(),
         (true,_)=>"Starting with credentials stored for this session only…".into(),
-        _=>"This session only: credentials stay in memory and are cleared on exit.\nRemember login: store credentials in macOS Keychain; system authorization is required.".into(),
+        _=>"Starting with remembered login in macOS Keychain…".into(),
     });
-    serde_json::json!({"loading":loading,"message":message,"mode":mode})
+    serde_json::json!({"loading":loading,"message":message,"mode":mode,"failed":failed})
 }
 
-fn begin_session(
-    app: tauri::AppHandle,
-    mode: startup::SessionMode,
-    remember_choice: bool,
-) -> Result<(), String> {
+fn begin_session(app: tauri::AppHandle, mode: startup::SessionMode) -> Result<(), String> {
     if app.try_state::<session::SessionStore>().is_some() {
-        return Err("A session is already active. Quit and reopen the app to choose how to store credentials.".into());
+        return Err("A session is already active.".into());
     }
     if app
         .state::<StartupState>()
@@ -64,19 +61,6 @@ fn begin_session(
         .swap(true, Ordering::AcqRel)
     {
         return Err("Sign-in information is already loading".into());
-    }
-    if remember_choice {
-        let saved = app
-            .path()
-            .app_config_dir()
-            .map_err(|error| error.to_string())
-            .and_then(|dir| startup::save_mode(&dir.join("session-mode.json"), mode));
-        if let Err(error) = saved {
-            app.state::<StartupState>()
-                .loading
-                .store(false, Ordering::Release);
-            return Err(error);
-        }
     }
     *app.state::<StartupState>()
         .mode
@@ -105,7 +89,7 @@ fn begin_session(
         let scheduling = app.run_on_main_thread(move || {
             let result = (|| -> Result<(), String> {
                 if !handle.manage(session?) {
-                    return Err("A session is already active. Quit and reopen the app to change credential storage.".into());
+                    return Err("A session is already active.".into());
                 }
                 windows::setup(&handle)?;
                 if let Err(error) = input::start(handle.clone()) {
@@ -150,6 +134,8 @@ const SYSTEM_COMMANDS: &[&str] = &[
     "check_app_update",
     "get_mac_build_info",
     "open_mac_update",
+    "download_mac_update",
+    "install_mac_update",
     "is_devtools_hotkeys_build",
     "is_internal_testing_build",
     "is_elevated_autostart_enabled",
@@ -170,18 +156,8 @@ fn handle(invoke: Invoke) -> bool {
             invoke.resolver.resolve(startup_status(&app));
             return true;
         }
-        let mode = match invoke.message.payload() {
-            InvokeBody::Json(value) => value
-                .get("mode")
-                .cloned()
-                .ok_or_else(|| "Choose a session mode".to_string())
-                .and_then(|value| {
-                    serde_json::from_value(value)
-                        .map_err(|error| format!("Invalid session mode: {error}"))
-                }),
-            _ => Err("Session mode requires JSON arguments".to_string()),
-        };
-        let result = mode.and_then(|mode| begin_session(app, mode, true));
+        let mode = *app.state::<StartupState>().mode.lock().unwrap_or_else(|p| p.into_inner());
+        let result = begin_session(app, mode.unwrap_or_default());
         invoke
             .resolver
             .respond(result.map_err(tauri::ipc::InvokeError::from));
@@ -269,6 +245,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().pubkey(updater::public_key(region)).build())
         .manage(windows::WindowState::default())
         .manage(StartupState::default())
         .manage(input::InputMonitor::new())
@@ -323,22 +300,12 @@ pub fn run() {
                     eprintln!("Could not schedule About window: {error}");
                 }
             });
-            let explicit_memory = std::env::args().any(|arg| arg == "--session-only");
-            let choose = std::env::args().any(|arg| arg == "--choose-session");
-            if explicit_memory {
-                begin_session(handle, startup::SessionMode::Memory, true)?;
-            } else if !choose {
-                match startup::load_mode(&app.path().app_config_dir()?.join("session-mode.json")) {
-                    Ok(Some(mode)) => begin_session(handle, mode, false)?,
-                    Ok(None) => {}
-                    Err(error) => {
-                        *app.state::<StartupState>()
-                            .error
-                            .lock()
-                            .map_err(|_| "Startup state lock failed")? = Some(error)
-                    }
-                }
-            }
+            let mode = if std::env::args().any(|arg| arg == "--session-only") {
+                startup::SessionMode::Memory
+            } else {
+                startup::SessionMode::default()
+            };
+            begin_session(handle, mode)?;
             Ok(())
         })
         .build(context);
