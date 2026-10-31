@@ -29,6 +29,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v8.0.2
         with:
           pattern: WuwaTappo-*-Mac-arm64
@@ -49,37 +52,11 @@ jobs:
               [[ ${#PACKAGES[@]} -eq 1 && -f "${PACKAGES[0]}" ]]
             done
           done
-          cat > /tmp/release-notes.md <<'NOTES'
-          <!-- wuwa-mac-minimum: 13.0 -->
-
-          ## Wuwa Tappo · Unofficial macOS Community Build (CN / Global)
-
-          Choose a file containing `CN` for a mainland China account or `Global` for a Global account. Both apps use English by default. Their accounts, settings and counters are isolated, and both can be installed together.
-
-          Drag the app from the DMG into Applications, or extract the ZIP and move the app there. Packages include their regional interface and assets. Login and multiplayer require the corresponding official services.
-
-          - Apple Silicon; macOS 13 or later.
-          - Both regional apps are named Wuwa Tappo; regional IDs and data stay separate. Install in separate folders to keep both. Remove the older regional-named app after upgrading.
-          - English interface and native prompts, including update feedback.
-          - Check for Updates discovers this fork’s releases, compares full Mac revisions and offers a signed regional update with Update and Restart.
-          - Update dialog uses the app’s artwork, English font and cream/brown styling; automatic installation verifies signed bytes and the fork version, saves counters/session, then replaces and relaunches the app.
-          - Update flow and publishing requirements: https://github.com/kyrie25/wuwa-tappo-mac/blob/main/docs/MAC_UPDATES.md
-          - Upgrade from mac.4 or earlier manually once to enable future in-app updates. DMG/ZIP downloads remain available.
-          - Login is remembered in macOS Keychain automatically; the app no longer asks you to choose storage at startup.
-          - Official 1.0.3 resources for both regions.
-          - Configurable global shortcuts with Cmd/Option labels, capture and persistence.
-          - Keyboard counting and mouse interactions without Input Monitoring or Accessibility permission.
-          - Ordinary key presses count once; held-key repeats, modifier-only presses and media keys are excluded.
-          - Method and validation: https://github.com/kyrie25/wuwa-tappo-mac/blob/main/docs/PERMISSION_FREE_INPUT.md
-          - Ad-hoc signed and not notarized by Apple. macOS may require Open Anyway in Privacy & Security.
-          - No personal credentials, click history or account caches are included.
-          - Community maintained and unofficial. Official assets retain their original ownership, and accounts, rewards and service rules are controlled by Kuro Games.
-
-          ZIP and DMG contain the same app for each region. Additional .app.tar.gz packages and .sig files support automatic updates (eight files in total). Publication requires passing tests, native builds and packaging for both regions. Real account login and multiplayer still require hands-on verification.
-          NOTES
+          NOTES=".github/release-notes/$TAG.md"
+          test -s "$NOTES"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/*.zip dist/*.dmg dist/*.app.tar.gz dist/*.app.tar.gz.sig --clobber
-            gh release edit "$TAG" --title "$TAG"
+            gh release edit "$TAG" --title "$TAG" --notes-file "$NOTES"
           else
-            gh release create "$TAG" dist/*.zip dist/*.dmg dist/*.app.tar.gz dist/*.app.tar.gz.sig --verify-tag --title "$TAG" --notes-file /tmp/release-notes.md --latest
+            gh release create "$TAG" dist/*.zip dist/*.dmg dist/*.app.tar.gz dist/*.app.tar.gz.sig --verify-tag --title "$TAG" --notes-file "$NOTES" --latest
           fi

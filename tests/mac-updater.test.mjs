@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { parse } from 'acorn';
 import { patchMacUpdater } from '../scripts/patch-frontend.mjs';
 import { findSource } from './frontend-context.mjs';
@@ -115,8 +115,12 @@ test('repeated interactive and silent checks share one pending native request', 
 test('release metadata minimum matches both regional configurations', async () => {
   const base = JSON.parse(await readFile(new URL('../src-tauri/tauri.conf.json', import.meta.url)));
   const global = JSON.parse(await readFile(new URL('../src-tauri/tauri.global.conf.json', import.meta.url)));
-  const workflow = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
-  const minimum = workflow.match(/<!-- wuwa-mac-minimum: ([\d.]+) -->/)?.[1];
+  const directory = new URL('../.github/release-notes/', import.meta.url);
+  const latest = (await readdir(directory)).filter(name => /^v\d+\.\d+\.\d+-mac\.\d+\.md$/.test(name))
+    .sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).at(-1);
+  assert.ok(latest, 'A versioned release-notes file is required');
+  const notes = await readFile(new URL(latest, directory), 'utf8');
+  const minimum = notes.match(/<!-- wuwa-mac-minimum: ([\d.]+) -->/)?.[1];
   assert.equal(minimum, base.bundle.macOS.minimumSystemVersion);
   assert.equal(minimum, global.bundle.macOS.minimumSystemVersion ?? base.bundle.macOS.minimumSystemVersion);
 });
