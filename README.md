@@ -2,7 +2,7 @@
 
 <h1 align="center">Wuwa Tappo for Mac</h1>
 
-<p align="center">An English WuWa desktop pet for macOS, with separate CN and Global apps.</p>
+<p align="center">An unofficial macOS port of <a href="https://download-wutheringwaves-wuwatappo.kurogames-global.com/download/en/">Wuwa Tappo</a>, with English interfaces for CN and Global accounts.</p>
 <p align="center">
   <a href="https://github.com/kyrie25/wuwa-tappo-mac/actions/workflows/ci.yml"><img src="https://github.com/kyrie25/wuwa-tappo-mac/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <a href="https://github.com/kyrie25/wuwa-tappo-mac/actions/workflows/release.yml"><img src="https://github.com/kyrie25/wuwa-tappo-mac/actions/workflows/release.yml/badge.svg" alt="Release status"></a>
