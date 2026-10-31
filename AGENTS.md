@@ -7,3 +7,4 @@
 - Keep CN and Global identities, data and updater signing keys separate. Never commit private signing keys, credentials or user data.
 - Keep project documentation limited to public platform APIs and independently verified app behavior. Preserve license attribution and exclude proprietary third-party implementation details.
 - Official installer resources must never be published as release assets. Release only Mac distribution/update packages and their signatures.
+- Release notes contain only Changelog and Instructions. Instructions must give actionable installation, upgrade or usage steps; behavior explanations belong in Changelog or documentation. Review each bullet's purpose before publishing. Correct existing release notes in place without creating a new binary release solely for that correction.
