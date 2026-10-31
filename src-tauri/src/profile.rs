@@ -10,8 +10,8 @@ pub enum Region {
 impl Region {
     pub fn from_identifier(identifier: &str) -> Result<Self, String> {
         match identifier {
-            "dev.w33d.wuwatappo.cn.mac" => Ok(Self::Cn),
-            "dev.w33d.wuwatappo.global.mac" => Ok(Self::Global),
+            "io.github.kyrie25.wuwatappo.cn.mac" => Ok(Self::Cn),
+            "io.github.kyrie25.wuwatappo.global.mac" => Ok(Self::Global),
             _ => Err("Unknown Wuwa Tappo application identity".into()),
         }
     }
@@ -22,6 +22,13 @@ impl Region {
 
     pub fn name(self) -> &'static str {
         "Wuwa Tappo"
+    }
+
+    pub fn legacy_identifier(self) -> &'static str {
+        match self {
+            Self::Cn => "dev.w33d.wuwatappo.cn.mac",
+            Self::Global => "dev.w33d.wuwatappo.global.mac",
+        }
     }
 
     pub fn api_host(self) -> &'static str {
@@ -48,14 +55,15 @@ mod tests {
     #[test]
     fn only_explicit_app_identities_select_a_region() {
         assert_eq!(
-            Region::from_identifier("dev.w33d.wuwatappo.cn.mac"),
+            Region::from_identifier("io.github.kyrie25.wuwatappo.cn.mac"),
             Ok(Region::Cn)
         );
         assert_eq!(
-            Region::from_identifier("dev.w33d.wuwatappo.global.mac"),
+            Region::from_identifier("io.github.kyrie25.wuwatappo.global.mac"),
             Ok(Region::Global)
         );
-        assert!(Region::from_identifier("dev.w33d.wuwatappo.mac").is_err());
+        assert!(Region::from_identifier("dev.w33d.wuwatappo.cn.mac").is_err());
+        assert!(Region::from_identifier("dev.w33d.wuwatappo.global.mac").is_err());
         assert!(Region::from_identifier("global").is_err());
         assert_ne!(Region::Cn.api_host(), Region::Global.api_host());
     }

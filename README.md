@@ -7,6 +7,8 @@
 
 This is a community-maintained, **unofficial macOS port**, maintained in [kyrie25/wuwa-tappo-mac](https://github.com/kyrie25/wuwa-tappo-mac). CN and Global are packaged separately and currently pin official version **1.0.3**. English is the default interface language in both builds. Regional accounts and services remain separate.
 
+Based on the original [Last-emo-boy/wuwa-tappo-mac](https://github.com/Last-emo-boy/wuwa-tappo-mac) macOS port. Credit for that backend and the original porting work belongs to its contributors; this fork maintains the English interface and subsequent Mac adaptations. Original copyright and MIT license notices are retained.
+
 ## Download and use
 
 Choose the `.dmg` for your account's region from [Releases](https://github.com/kyrie25/wuwa-tappo-mac/releases), then drag the app into Applications. Alternatively, extract the corresponding `.zip`. If this fork has no release yet, build from source below.
@@ -16,13 +18,13 @@ Choose the `.dmg` for your account's region from [Releases](https://github.com/k
 | Mainland China | **Wuwa Tappo.app** | `WuwaTappo-CN-Mac` |
 | Global | **Wuwa Tappo.app** | `WuwaTappo-Global-Mac` |
 
-Both apps are named **Wuwa Tappo**. To keep both installed, put them in separate folders (for example, `Applications/Wuwa CN/` and `Applications/Wuwa Global/`) so one does not replace the other. Login data, settings, counters and Keychain entries remain isolated by their unchanged regional bundle IDs; account data is not migrated between regions. When upgrading from the older regional app names, quit and remove the old app after installing the new one.
+Both apps are named **Wuwa Tappo**. To keep both installed, put them in separate folders (for example, `Applications/Wuwa CN/` and `Applications/Wuwa Global/`) so one does not replace the other. This fork uses `io.github.kyrie25.wuwatappo.cn.mac` and `io.github.kyrie25.wuwatappo.global.mac` bundle IDs. On first launch after upgrading, each region imports its existing counters, shortcuts, WebKit settings and remembered Keychain login from the old identity without replacing data already saved under the new identity. Original data is retained for recovery, and subsequent launches do not re-import deleted data or logged-out sessions. macOS may request authorization to read the old Keychain item. Account data is never migrated between regions. Quit older copies before upgrading; when moving from the older regional app names, remove the old app after installing the new one.
 
 - **Requirements:** Apple Silicon (M series), macOS 13 or later. No Intel build is currently provided.
 - **Included resources:** Each package includes its regional interface and embedded assets. No separate EXE download or extraction is needed. Login, asset updates and online features require internet access.
 - **First launch:** These builds are not notarized by Apple. If macOS blocks the app, verify its source, then use System Settings → Privacy & Security → Open Anyway.
 - **Input counting:** Ordinary key presses and supported mouse clicks work without Input Monitoring or Accessibility permission. Held-key autorepeat, modifier-only presses and media keys do not add keyboard counts. See [how permission-free input works](docs/PERMISSION_FREE_INPUT.md).
-- **Login:** CN uses the official embedded login; Global uses official browser login with a callback to the app. Login is remembered automatically using macOS Keychain; no startup storage-choice prompt is shown. macOS may still request Keychain authorization.
+- **Login:** CN uses the official embedded login; Global uses official browser login with a callback to the app. Login is remembered automatically using macOS Keychain; no startup storage-choice prompt is shown. Releases use a [persistent self-signed app identity](docs/MAC_SIGNING.md) to retain Keychain access across updates. Initial migration or user Keychain policies may still require authorization. This does not provide Gatekeeper trust or notarization.
 - **Language:** App-owned menus, prompts and bundled interface text are English. Login pages, announcements and other content served by Kuro may use the service's language. Character artwork and audio remain the original assets.
 
 Quit the old app before replacing it in Applications. Avoid running multiple copies. If input stops responding after an update, use **Restart Input Counting** in the menu or restart the app. Existing Input Monitoring or Accessibility grants are unnecessary for counting and can be removed in System Settings.

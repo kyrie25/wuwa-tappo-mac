@@ -16,4 +16,6 @@ The renderer test code in `tests/fixtures/kuro-sdk-preact.js` uses Preact under 
 
 ## Build dependencies
 
+Update-note Markdown rendering uses markdown-it and its dependencies under their respective licenses. Their license texts are included in the app’s `Contents/Resources/licenses` directory. Raw HTML rendering is disabled.
+
 Tauri, Rust crates, Node.js packages and 7-Zip retain their respective licenses. Versions are recorded in `src-tauri/Cargo.lock` and `package-lock.json`. 7-Zip is used only for static extraction during builds and is not distributed with the app.

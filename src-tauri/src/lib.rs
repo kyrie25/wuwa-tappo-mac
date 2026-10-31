@@ -1,6 +1,7 @@
 mod auth;
 mod gamepad;
 mod geometry;
+mod identity;
 mod input;
 mod menu;
 mod profile;
@@ -76,14 +77,22 @@ fn begin_session(app: tauri::AppHandle, mode: startup::SessionMode) -> Result<()
             .map_err(|error| error.to_string())?;
     }
     let identifier = app.config().identifier.clone();
+    let legacy_identifier = profile::Region::from_app(&app).legacy_identifier();
+    let migration_marker = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join(".identity-keychain-migrated");
     tauri::async_runtime::spawn(async move {
         let session = if mode == startup::SessionMode::Memory {
             Ok(session::SessionStore::ephemeral())
         } else {
-            tauri::async_runtime::spawn_blocking(move || session::SessionStore::open(identifier))
-                .await
-                .map_err(|error| error.to_string())
-                .and_then(|session| session)
+            tauri::async_runtime::spawn_blocking(move || {
+                session::SessionStore::open(identifier, legacy_identifier, &migration_marker)
+            })
+            .await
+            .map_err(|error| error.to_string())
+            .and_then(|session| session)
         };
         let handle = app.clone();
         let scheduling = app.run_on_main_thread(move || {
@@ -270,6 +279,7 @@ pub fn run() {
     let app = builder
         .setup(|app| {
             let handle = app.handle().clone();
+            identity::migrate(&handle)?;
             app.manage(storage::CounterStore::new(
                 app.path().app_data_dir()?.join("counters.json"),
             ));

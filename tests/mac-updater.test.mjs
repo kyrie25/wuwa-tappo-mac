@@ -5,6 +5,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { parse } from 'acorn';
 import { patchMacUpdater } from '../scripts/patch-frontend.mjs';
 import { findSource } from './frontend-context.mjs';
+import MarkdownIt from 'markdown-it';
 
 const bridge = await readFile(new URL('../scripts/mac-updater.js', import.meta.url), 'utf8');
 
@@ -19,7 +20,7 @@ function runtime(handler, {shutdownError} = {}) {
     },
   };
   const events = [];
-  const window = { __WUWATAPPO_UPDATE_SHUTDOWN__: async () => { calls.push({command:'shutdown'}); if(shutdownError)throw new Error(shutdownError); }, __TAURI__: {event:{listen:async (_name, listener) => {events.push(listener);return () => calls.push({command:'unlisten'});}}}, __TAURI_INTERNALS__: { invoke(command, args) {
+  const window = { markdownit: MarkdownIt, __WUWATAPPO_UPDATE_SHUTDOWN__: async () => { calls.push({command:'shutdown'}); if(shutdownError)throw new Error(shutdownError); }, __TAURI__: {event:{listen:async (_name, listener) => {events.push(listener);return () => calls.push({command:'unlisten'});}}}, __TAURI_INTERNALS__: { invoke(command, args) {
     calls.push({ command, args });
     if (command === 'get_mac_build_info') return Promise.resolve({ forkVersion: '1.0.3-mac.3', resourceVersion: '1.0.3' });
     return Promise.resolve().then(() => handler(command, args));
@@ -49,14 +50,14 @@ test('the actual regional frontend routes checks through the Mac bridge and cann
   assert.throws(() => patchMacUpdater(''), /updater flow changed/);
 });
 
-test('available updates show both fork revisions, plain-text notes and explicit replacement instructions', async () => {
+test('available updates show both fork revisions, escaped HTML notes and explicit replacement instructions', async () => {
   const view = runtime(() => available);
   const result = await view.check({ interactive: true });
   assert.equal(result.kind, 'external');
   assert.equal(view.dialog.open, true);
   assert.match(view.fields.get('installed').textContent, /1.0.3-mac.3/);
   assert.match(view.fields.get('status').textContent, /1.0.3-mac.4/);
-  assert.equal(view.fields.get('notes').textContent, '<script>text only</script>');
+  assert.equal(view.fields.get('notes').innerHTML, '<p>&lt;script&gt;text only&lt;/script&gt;</p>\n');
   assert.equal(view.fields.get('instructions').hidden, false);
   assert.equal(view.fields.get('download').textContent, 'Download DMG');
   await view.fields.get('download').onclick();
@@ -67,6 +68,24 @@ test('available updates show both fork revisions, plain-text notes and explicit 
   assert.match(view.fields.get('status').textContent, /Quit this app/);
   view.fields.get('close').onclick();
   assert.equal(view.dialog.open, false);
+});
+
+test('release Markdown renders headings, lists, emphasis, code and safe links', async () => {
+  const notes = '## Changelog\n\n- **Fixed** sleep with `Date.now()`\n\n[Details](https://github.com/kyrie25/wuwa-tappo-mac)\n\n[unsafe](javascript:alert(1))\n\n<img src=x onerror=alert(1)>';
+  const view = runtime(() => ({ ...available, release: { ...available.release, notes } }));
+  await view.check({ interactive: true });
+  const html = view.fields.get('notes').innerHTML;
+  assert.match(html, /<h2>Changelog<\/h2>/);
+  assert.match(html, /<ul>\n<li><strong>Fixed<\/strong> sleep with <code>Date.now\(\)<\/code><\/li>/);
+  assert.match(html, /<a href="https:\/\/github.com\/kyrie25\/wuwa-tappo-mac">Details<\/a>/);
+  assert.doesNotMatch(html, /href="javascript:|<img|<script/);
+  let prevented = false;
+  await view.fields.get('notes').onclick({
+    target: { closest: () => ({ href: 'https://github.com/kyrie25/wuwa-tappo-mac' }) },
+    preventDefault() { prevented = true; },
+  });
+  assert.equal(prevented, true);
+  assert.equal(view.calls.at(-1).command, 'plugin:opener|open_url');
 });
 
 test('equal versions, absent releases and development builds have distinct results', async () => {

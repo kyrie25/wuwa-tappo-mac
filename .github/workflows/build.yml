@@ -13,6 +13,10 @@ on:
         required: false
       WUWA_UPDATER_KEY_GLOBAL:
         required: false
+      WUWA_CODESIGN_P12:
+        required: false
+      WUWA_CODESIGN_PASSWORD:
+        required: false
 
 permissions:
   contents: read
@@ -93,6 +97,14 @@ jobs:
           npm run test:rust
       - name: Build complete application
         run: npm run build -- -- --locked
+      - name: Sign release app with persistent identity
+        if: env.WUWA_FORK_VERSION != ''
+        env:
+          WUWA_CODESIGN_P12: ${{ secrets.WUWA_CODESIGN_P12 }}
+          WUWA_CODESIGN_PASSWORD: ${{ secrets.WUWA_CODESIGN_PASSWORD }}
+        run: |
+          bash scripts/test-macos-signing.sh
+          bash scripts/sign-macos.sh 'src-tauri/target/release/bundle/macos/Wuwa Tappo.app'
       - name: Verify and package ZIP, DMG and signed updates
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets[matrix.signing_secret] }}

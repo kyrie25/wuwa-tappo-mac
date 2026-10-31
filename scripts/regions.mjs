@@ -6,7 +6,7 @@ const profiles = {
     updaterHostFile: 'latest_host.json',
     upstreamLock: 'upstream-cn.json', frontendDir: 'frontend', preparedDir: 'build/frontend',
     iconsDir: 'src-tauri/icons', tauriConfig: null,
-    productName: 'Wuwa Tappo', identifier: 'dev.w33d.wuwatappo.cn.mac',
+    productName: 'Wuwa Tappo', identifier: 'io.github.kyrie25.wuwatappo.cn.mac',
     artifactPrefix: 'WuwaTappo-CN-Mac',
   },
   global: {
@@ -16,7 +16,7 @@ const profiles = {
     updaterHostFile: 'latest-global_host.json',
     upstreamLock: 'upstream-global.json', frontendDir: 'frontend-global', preparedDir: 'build/frontend-global',
     iconsDir: 'src-tauri/icons-global', tauriConfig: 'src-tauri/tauri.global.conf.json',
-    productName: 'Wuwa Tappo', identifier: 'dev.w33d.wuwatappo.global.mac',
+    productName: 'Wuwa Tappo', identifier: 'io.github.kyrie25.wuwatappo.global.mac',
     artifactPrefix: 'WuwaTappo-Global-Mac',
   },
 };

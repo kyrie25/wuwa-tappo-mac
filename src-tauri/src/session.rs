@@ -3,6 +3,7 @@ use security_framework::passwords::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
@@ -15,6 +16,47 @@ const SECURE_STORAGE_KEYS: [&str; 3] = [
     "__KrSDK_USER_INFO__",
     "overseas-pending-role-select",
 ];
+
+fn read_keychain(service: &str) -> Result<Option<Vec<u8>>, String> {
+    match get_generic_password(service, ACCOUNT) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.code() == ITEM_NOT_FOUND => Ok(None),
+        Err(error) => Err(format!(
+            "Cannot open the app sign-in keychain item (OSStatus {})",
+            error.code()
+        )),
+    }
+}
+
+fn migrate_keychain(
+    service: &str,
+    legacy_service: &str,
+    marker: &Path,
+    read: impl Fn(&str) -> Result<Option<Vec<u8>>, String>,
+    write: impl Fn(&[u8]) -> Result<(), String>,
+) -> Result<Option<Vec<u8>>, String> {
+    let current = read(service)?;
+    if marker.try_exists().map_err(|e| e.to_string())? {
+        return Ok(current);
+    }
+    let bytes = match current {
+        Some(bytes) => Some(bytes),
+        None => match read(legacy_service)? {
+            Some(bytes) => {
+                // Validate before copying; never log or write credentials to disk.
+                serde_json::from_slice::<SessionSnapshot>(&bytes).map_err(|_| {
+                    "Secure sign-in data in the legacy app keychain item is invalid"
+                })?;
+                write(&bytes)?;
+                Some(bytes)
+            }
+            None => None,
+        },
+    };
+    std::fs::write(marker, b"1\n")
+        .map_err(|e| format!("Could not record sign-in migration: {e}"))?;
+    Ok(bytes)
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -186,19 +228,31 @@ impl SessionStore {
         matches!(&self.backend, SessionBackend::Memory)
     }
 
-    pub fn open(identifier: impl Into<String>) -> Result<Self, String> {
+    pub fn open(
+        identifier: impl Into<String>,
+        legacy_identifier: &str,
+        marker: &Path,
+    ) -> Result<Self, String> {
         let service = format!("{}.session", identifier.into());
-        let mut snapshot = match get_generic_password(&service, ACCOUNT) {
-            Ok(bytes) => serde_json::from_slice::<SessionSnapshot>(&bytes).map_err(|_| {
+        let bytes = migrate_keychain(
+            &service,
+            &format!("{legacy_identifier}.session"),
+            marker,
+            read_keychain,
+            |bytes| {
+                set_generic_password(&service, ACCOUNT, bytes).map_err(|error| {
+                    format!(
+                        "Cannot migrate app sign-in data in Keychain (OSStatus {})",
+                        error.code()
+                    )
+                })
+            },
+        )?;
+        let mut snapshot = match bytes {
+            Some(bytes) => serde_json::from_slice::<SessionSnapshot>(&bytes).map_err(|_| {
                 "Secure sign-in data in the app keychain item is invalid".to_owned()
             })?,
-            Err(error) if error.code() == ITEM_NOT_FOUND => SessionSnapshot::default(),
-            Err(error) => {
-                return Err(format!(
-                    "Cannot open the app sign-in keychain item (OSStatus {})",
-                    error.code()
-                ))
-            }
+            None => SessionSnapshot::default(),
         };
         remove_expired(&mut snapshot, now_millis());
         snapshot
@@ -314,6 +368,60 @@ pub async fn session_apply(
 mod tests {
     use super::*;
     use std::cell::{Cell, RefCell};
+
+    #[test]
+    fn identity_keychain_migration_is_once_only_and_preserves_logout() {
+        let root =
+            std::env::temp_dir().join(format!("wuwa-keychain-migration-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let marker = root.join("done");
+        let legacy = serde_json::to_vec(&SessionSnapshot::default()).unwrap();
+        let current = RefCell::new(None::<Vec<u8>>);
+        let read = |service: &str| {
+            Ok(if service == "new" {
+                current.borrow().clone()
+            } else {
+                Some(legacy.clone())
+            })
+        };
+        let write = |bytes: &[u8]| {
+            *current.borrow_mut() = Some(bytes.to_vec());
+            Ok(())
+        };
+        assert_eq!(
+            migrate_keychain("new", "old", &marker, read, write).unwrap(),
+            Some(legacy.clone())
+        );
+        *current.borrow_mut() = None; // Logout deletes the new Keychain item.
+        assert_eq!(
+            migrate_keychain("new", "old", &marker, read, write).unwrap(),
+            None
+        );
+        assert!(current.borrow().is_none());
+        std::fs::remove_file(&marker).unwrap();
+        let denied = |_: &[u8]| Err("synthetic migration denied".into());
+        assert!(migrate_keychain("new", "old", &marker, read, denied).is_err());
+        assert!(!marker.exists());
+        assert!(current.borrow().is_none());
+        let corrupt = |service: &str| {
+            Ok(if service == "new" {
+                None
+            } else {
+                Some(b"{invalid".to_vec())
+            })
+        };
+        assert!(migrate_keychain("new", "old", &marker, corrupt, write).is_err());
+        assert!(!marker.exists());
+        *current.borrow_mut() = Some(legacy.clone());
+        assert_eq!(
+            migrate_keychain("new", "old", &marker, read, |_| panic!(
+                "Existing login must not be replaced"
+            ))
+            .unwrap(),
+            Some(legacy)
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[derive(Default)]
     struct MockKeychain {

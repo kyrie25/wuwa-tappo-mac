@@ -8,9 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { getRegionProfile } from '../scripts/regions.mjs';
 import { tauriArguments } from '../scripts/app.mjs';
 
-test('CN retains its existing resource paths and application identity', () => {
+test('CN retains its resource paths with the fork-owned application identity', () => {
   const cn = getRegionProfile('cn');
-  assert.equal(cn.identifier, 'dev.w33d.wuwatappo.cn.mac');
+  assert.equal(cn.identifier, 'io.github.kyrie25.wuwatappo.cn.mac');
   assert.equal(cn.frontendDir, 'frontend');
   assert.equal(cn.preparedDir, 'build/frontend');
   assert.equal(cn.tauriConfig, null);

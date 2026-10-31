@@ -3,6 +3,7 @@
   let dialog;
   let displayedVersion;
   let installing = false;
+  const markdown = window.markdownit({ html: false });
   const invoke = (command, args = {}) => window.__TAURI_INTERNALS__.invoke(command, args);
   const field = name => dialog.querySelector(`[data-update="${name}"]`);
   const message = error => typeof error === 'string' ? error : error?.message || 'Could not check for updates. Try again.';
@@ -17,14 +18,16 @@
         #wuwatappo-mac-update{box-sizing:border-box;width:min(520px,calc(100vw - 48px));max-height:calc(100vh - 48px);overflow:auto;border:3px solid #995e3f;border-radius:48px;padding:28px 32px 32px;background:#fef1d9 var(--mac-update-background,none) center/cover no-repeat;color:#8e5e43;font:14px/1.6 var(--font-main,inherit);box-shadow:0 8px 32px #5c403033}
         #wuwatappo-mac-update::backdrop{background:#00000059}#wuwatappo-mac-update h2{font-family:var(--font-bold,inherit);font-size:24px;line-height:1.3;margin:0 0 12px}#wuwatappo-mac-update p{margin:12px 0;overflow-wrap:anywhere}
         #wuwatappo-mac-update [data-update="installed"]{color:#8e7b6a}#wuwatappo-mac-update [data-update="status"]{font-weight:700}#wuwatappo-mac-update [data-update="instructions"],#wuwatappo-mac-update [data-update="asset"]{font-size:13px;color:#8e7b6a}
-        #wuwatappo-mac-update pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;color:#5c4030;max-height:160px;overflow:auto;background:#fef6dd;border:2px solid #ebce9b;padding:12px 14px;border-radius:18px;margin:16px 0}
+        #wuwatappo-mac-update [data-update="notes"]{overflow-wrap:anywhere;color:#5c4030;max-height:160px;overflow:auto;background:#fef6dd;border:2px solid #ebce9b;padding:12px 14px;border-radius:18px;margin:16px 0}
+        #wuwatappo-mac-update [data-update="notes"] :first-child{margin-top:0}#wuwatappo-mac-update [data-update="notes"] :last-child{margin-bottom:0}#wuwatappo-mac-update [data-update="notes"] :is(h1,h2,h3,h4,h5,h6){font-family:var(--font-bold,inherit);font-size:16px;line-height:1.4;margin:16px 0 8px}
+        #wuwatappo-mac-update [data-update="notes"] :is(ul,ol){padding-left:22px;margin:8px 0}#wuwatappo-mac-update [data-update="notes"] li{margin:6px 0}#wuwatappo-mac-update [data-update="notes"] a{color:#995e3f;text-decoration:underline}#wuwatappo-mac-update [data-update="notes"] pre{white-space:pre-wrap;font-size:12px}#wuwatappo-mac-update [data-update="notes"] code{background:#ebce9b55;border-radius:4px;padding:1px 4px}#wuwatappo-mac-update [data-update="notes"] blockquote{margin:8px 0;padding-left:12px;border-left:3px solid #ebce9b}#wuwatappo-mac-update [data-update="notes"] table{display:block;overflow:auto;border-collapse:collapse}#wuwatappo-mac-update [data-update="notes"] :is(td,th){border:1px solid #ebce9b;padding:4px 8px}#wuwatappo-mac-update [data-update="notes"] img{max-width:100%;height:auto}
         #wuwatappo-mac-update footer{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:24px}#wuwatappo-mac-update button{box-sizing:border-box;flex:1 1 160px;min-height:44px;padding:6px 16px;border:2px solid #ebce9b;border-radius:22px;background:#ffe0a9;color:#8e5e43;box-shadow:0 2px #ebce9b;font:700 16px/1.4 var(--font-bold,inherit);cursor:pointer}
         #wuwatappo-mac-update button[data-update="install"],#wuwatappo-mac-update button[data-update="download"],#wuwatappo-mac-update button[data-update="retry"]{background:#c88865;color:#fdf9ed;border-color:#995e3f;box-shadow:0 2px #995e3f}#wuwatappo-mac-update button:focus-visible{outline:3px solid #8e5e43;outline-offset:3px}#wuwatappo-mac-update button:active{transform:translateY(2px);box-shadow:none}#wuwatappo-mac-update button:disabled{opacity:.5;cursor:wait}
-        #wuwatappo-mac-update::-webkit-scrollbar,#wuwatappo-mac-update pre::-webkit-scrollbar{width:4px;background:#eed4b8;border-radius:4px}#wuwatappo-mac-update::-webkit-scrollbar-thumb,#wuwatappo-mac-update pre::-webkit-scrollbar-thumb{background:#ffdca8;border-radius:4px}
+        #wuwatappo-mac-update::-webkit-scrollbar,#wuwatappo-mac-update [data-update="notes"]::-webkit-scrollbar{width:4px;background:#eed4b8;border-radius:4px}#wuwatappo-mac-update::-webkit-scrollbar-thumb,#wuwatappo-mac-update [data-update="notes"]::-webkit-scrollbar-thumb{background:#ffdca8;border-radius:4px}
         @media(max-width:420px){#wuwatappo-mac-update{width:calc(100vw - 24px);max-height:calc(100vh - 24px);padding:24px;border-radius:32px}#wuwatappo-mac-update h2{font-size:22px}}
       </style><h2 id="wuwatappo-update-title" data-update="title">Check for Updates</h2>
       <p data-update="installed"></p><p data-update="status" role="status" aria-live="polite"></p>
-      <pre data-update="notes" hidden></pre>
+      <section data-update="notes" aria-label="Release notes" hidden></section>
       <p data-update="instructions" hidden>Download the package, quit this app normally, then replace the same regional app in Applications. Your settings, counters and remembered login are preserved.</p>
       <p data-update="asset" hidden></p>
       <footer><button data-update="retry" hidden>Try Again</button><button data-update="release" hidden>Release Notes</button><button data-update="install" hidden>Update and Restart</button><button data-update="download" hidden>Download</button><button data-update="close">Close</button></footer>`;
@@ -58,6 +61,13 @@
         }
       };
       field('retry').onclick = () => check({ interactive: true });
+      field('notes').onclick = async event => {
+        const link = event.target.closest('a');
+        if (!link) return;
+        event.preventDefault();
+        try { await invoke('plugin:opener|open_url', { url: link.href }); }
+        catch (error) { field('status').textContent = message(error); }
+      };
       for (const [name, action] of [['release', 'notes'], ['download', 'download']]) {
         field(name).onclick = async () => {
           field(name).disabled = true;
@@ -96,7 +106,7 @@
       field('instructions').textContent = info.release.canInstall
         ? 'Update and Restart downloads and verifies this regional app, saves your counters and session, then installs and relaunches it. macOS may ask for administrator approval. Your settings, counters and remembered login are preserved.'
         : 'Download the package, quit this app normally, then replace the same regional app in Applications. This release or development build supports manual installation. Your settings, counters and remembered login are preserved.';
-      field('notes').textContent = info.release.notes;
+      field('notes').innerHTML = markdown.render(info.release.notes);
       field('asset').textContent = info.release.assetName;
       field('download').textContent = info.release.assetName.endsWith('.dmg') ? 'Download DMG' : 'Download ZIP';
       for (const name of ['release', 'download', 'notes', 'instructions', 'asset']) field(name).hidden = false;

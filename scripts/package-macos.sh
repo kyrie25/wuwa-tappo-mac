@@ -80,6 +80,11 @@ if [ ! -f "$BINARY" ] || [ "$(/usr/bin/lipo -archs "$BINARY")" != arm64 ]; then
   exit 1
 fi
 /usr/bin/codesign --verify --deep --strict "$APP"
+if [ -n "${WUWA_FORK_VERSION:-}" ]; then
+  FINGERPRINT=$(/usr/bin/openssl x509 -in "$ROOT/src-tauri/codesign.pem" -noout -fingerprint -sha1 | /usr/bin/sed 's/.*=//;s/://g')
+  /usr/bin/codesign --verify --deep --strict \
+    -R "=identifier \"$EXPECTED_IDENTIFIER\" and certificate leaf = H\"$FINGERPRINT\"" "$APP"
+fi
 
 # Tauri embeds the frontend in the executable; verify build inputs and embedded paths without copying user data.
 phase "Check ${REGION_LABEL} embedded resources"
