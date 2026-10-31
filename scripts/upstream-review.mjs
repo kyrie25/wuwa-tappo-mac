@@ -8,6 +8,45 @@ import { getRegionProfile } from './regions.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const reviewStages = ['inventory', 'frontend', 'native', 'build', 'package'];
 
+export function candidateFiles(profile) {
+  return [profile.upstreamLock, `tests/contracts${profile.id === 'cn' ? '' : '-global'}.json`,
+    `tests/network-contract${profile.id === 'cn' ? '' : '-global'}.json`,
+    profile.tauriConfig || 'src-tauri/tauri.conf.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'package.json', 'package-lock.json'];
+}
+
+export async function prepareCompatibleMetadata(projectRoot = root, profile = getRegionProfile()) {
+  const files = candidateFiles(profile);
+  const json = async filename => JSON.parse(await readFile(path.join(projectRoot, filename), 'utf8'));
+  const lock = await json(profile.upstreamLock);
+  const accepted = await json(files[1]);
+  const observed = await json('.work/upstream-review/observed-inventory.json');
+  if (lock.version.localeCompare(accepted.sourceApplication.version, 'en', { numeric: true }) < 0) throw new Error('Official version rollback requires review.');
+  const comparable = inventory => ({ ...inventory, sourceApplication: { ...inventory.sourceApplication, version: lock.version } });
+  if (!isDeepStrictEqual(comparable(accepted), comparable(observed))) {
+    throw new Error('Official frontend inventory changed. Review and adapt its contracts before accepting this version.');
+  }
+  const network = await json(files[2]);
+  if (network.application !== `WuwaTappo-${profile.id} ${accepted.sourceApplication.version}`) throw new Error('Unexpected network contract application metadata.');
+  network.application = `WuwaTappo-${profile.id} ${lock.version}`;
+  const config = await json(files[3]);
+  config.version = lock.version;
+  const pkg = await json('package.json');
+  const sharedVersion = [pkg.version, lock.version].sort((a, b) => a.localeCompare(b, 'en', { numeric: true })).at(-1);
+  pkg.version = sharedVersion;
+  const npmLock = await json('package-lock.json');
+  npmLock.version = npmLock.packages[''].version = sharedVersion;
+  const cargoPath = path.join(projectRoot, 'src-tauri/Cargo.toml');
+  const cargoLockPath = path.join(projectRoot, 'src-tauri/Cargo.lock');
+  const cargo = await readFile(cargoPath, 'utf8');
+  const cargoLock = await readFile(cargoLockPath, 'utf8');
+  if (!/^version = "[^"]+"$/m.test(cargo) || !/name = "wuwatappo-mac"\nversion = "[^"]+"/.test(cargoLock)) throw new Error('Unexpected Cargo version metadata.');
+  for (const [filename, content] of [[files[1], observed], [files[2], network], [files[3], config], ['package.json', pkg], ['package-lock.json', npmLock]]) {
+    await writeFile(path.join(projectRoot, filename), `${JSON.stringify(content, null, 2)}\n`);
+  }
+  await writeFile(cargoPath, cargo.replace(/^version = "[^"]+"$/m, `version = "${sharedVersion}"`));
+  await writeFile(cargoLockPath, cargoLock.replace(/(name = "wuwatappo-mac"\nversion = ")[^"]+"/, `$1${sharedVersion}"`));
+}
+
 function entryContract({ callSites, ...entry }) {
   return { ...entry, payloadReads: [...new Set(callSites.flatMap(site => site.payloadReads || []))].sort() };
 }
@@ -55,7 +94,7 @@ export function updatePullRequestArguments({ profile, version, branch, runUrl, o
   const results = reviewStages.map(stage => `- ${stage}: ${outcomes[stage] || 'skipped'}`).join('\n');
   const body = [
     `Pin official ${profile.label} resources to ${version}. The other region is unchanged.`,
-    validated ? 'Resource checks, contract tests, Rust tests, native build and ZIP/DMG packaging passed. Verify real account login, input permissions and multiplayer before merging and releasing.' : 'This candidate has not passed compatibility validation. Keep this PR as a draft until interface changes are reviewed, failures are fixed and CI passes for both regions.',
+    validated ? 'Resource checks, unchanged frontend inventory, contract tests, Rust tests, native build and ZIP/DMG packaging passed. Automation will merge this update and release after both regions align. Real-account and physical-device acceptance limits remain documented in the user guide.' : 'This candidate has not passed compatibility validation. Keep this PR as a draft until interface changes are reviewed, failures are fixed and CI passes for both regions.',
     results,
     `Run, failure logs, observed inventory and contract differences: [Actions](${runUrl}). Review evidence: official-${profile.id}-review; packages after full validation: official-${profile.id}-candidate.`,
   ].join('\n\n');
@@ -71,10 +110,14 @@ export async function openUpdatePullRequest({ projectRoot = root, profile = getR
   run('git', ['switch', '-c', branch]);
   run('git', ['config', 'user.name', 'github-actions[bot]']);
   run('git', ['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com']);
-  run('git', ['add', '--', profile.upstreamLock]);
+  const outcomes = Object.fromEntries(reviewStages.map(stage => [stage, environment[`${stage.toUpperCase()}_OUTCOME`]]));
+  const validated = reviewStages.every(stage => outcomes[stage] === 'success');
+  run('git', ['add', '--', ...(validated ? candidateFiles(profile) : [profile.upstreamLock])]);
   run('git', ['commit', '-m', `chore: sync official ${profile.id} resources ${check.latestVersion}`]);
   run('git', ['push', 'origin', branch]);
-  const outcomes = Object.fromEntries(reviewStages.map(stage => [stage, environment[`${stage.toUpperCase()}_OUTCOME`]]));
+  const head = execute('git', ['rev-parse', 'HEAD'], { cwd: projectRoot, encoding: 'utf8' }).trim();
+  await mkdir(path.join(projectRoot, '.work/upstream-review'), { recursive: true });
+  await writeFile(path.join(projectRoot, '.work/upstream-review/candidate.json'), `${JSON.stringify({ region: profile.id, version: check.latestVersion, branch, head, validated })}\n`);
   const runUrl = `https://github.com/${environment.GITHUB_REPOSITORY}/actions/runs/${environment.GITHUB_RUN_ID}`;
   run('gh', updatePullRequestArguments({ profile, version: check.latestVersion, branch, runUrl, outcomes }));
 }
@@ -90,6 +133,7 @@ export function reportFailure({ profile = getRegionProfile(), environment = proc
 
 async function main(action) {
   if (action === 'inventory') return writeInventoryReview();
+  if (action === 'prepare-compatible') return prepareCompatibleMetadata();
   if (action === 'open-pr') return openUpdatePullRequest();
   if (action === 'report') return reportFailure();
   throw new Error(`Unknown upstream review action: ${action}`);

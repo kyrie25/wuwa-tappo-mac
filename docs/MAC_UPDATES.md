@@ -41,6 +41,10 @@ REGION is `CN` or `Global`; the release has eight files total. DMG/ZIP remain th
 
 The reusable build workflow accepts regional updater secrets, exposed only to packaging, plus the persistent app-signing identity exposed only to tagged signing/tests. Release inherits these through the reusable-workflow secret contract. Ordinary branch/PR builds can test and package ad-hoc DMG/ZIP without access to signing secrets; tagged packaging fails if a key is missing or the app signer is unexpected. Publication checks all eight artifacts after both regional tests/builds/package jobs pass. Official installers must never be uploaded as release assets.
 
+## Publishing from GitHub
+
+Use **Actions → Release → Run workflow**. Leave the tag blank for the next Mac revision, or specify an existing tag to retry it. Supply changelog bullet points unless the tagged source already has a matching prepared release-notes file. The workflow pins the source commit and notes before building both regions; publication waits for tests, signing and all eight packages. A new Mac version-tag push also triggers Release when its prepared notes are committed. Branch/file changes alone do not. Compatible official updates verified and merged by Sync are the sole automatic-release exception; see [synchronization](SYNCHRONIZATION.md#automatic-compatible-updates).
+
 ## Key management
 
 Public keys are committed in `src-tauri/updater-cn.pub` and `updater-global.pub`. Protected local private-key backups were created outside the repository under `$HOME/.config/wuwa-tappo-mac/updater-cn.key` and `updater-global.key` (directory mode 0700; files 0600). GitHub Actions secrets are `WUWA_UPDATER_KEY_CN` and `WUWA_UPDATER_KEY_GLOBAL`. Private key material must never enter Git, logs, screenshots, release assets or the knowledge base. Keep a secure maintainer backup; losing a key prevents signing updates trusted by installed builds.

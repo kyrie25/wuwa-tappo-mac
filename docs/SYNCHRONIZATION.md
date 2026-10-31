@@ -29,13 +29,25 @@ For the next official version:
 2. Review `.work/upstream-review/contract-changes.json` and `observed-inventory.json` before updating accepted snapshots. Implement any new commands/events and reconcile version-specific patches and translations.
 3. Update application metadata and network contract anchors only after inspecting the actual bundles and manifests.
 4. Run JavaScript and Rust tests, native smoke checks, builds and packaging for both regions. Real account login, input authorization, physical keyboard/controller behavior and multiplayer require hands-on acceptance testing.
-5. Publish a Mac release from the validated commit.
+5. Request a Mac release from the validated commit through **Actions → Release → Run workflow** when manual adaptation was required.
 
 The sync workflow retains contract differences and validation logs and opens a draft PR when extraction succeeds but compatibility fails. Extraction alone does not establish native compatibility.
 
+## Automatic compatible updates
+
+After extraction, Sync compares the full observed frontend inventory with its accepted regional fixture. Only the version field may differ. Changed commands, events, call sites, runtime constants or other inventory data require review; automation does not accept those changes. Official version rollbacks also require review.
+
+For an unchanged inventory, Sync updates the selected region's inventory version, network-contract application label and Tauri version, plus shared Cargo/npm version metadata. Shared versions never decrease while the other region catches up. It then runs the existing frontend/English/network checks, Rust tests, native build and packaging. A failed candidate stays a draft containing only its regional resource lock.
+
+A passing candidate records its tested commit in an Actions artifact. The final job verifies that the PR is in this repository, targets `main`, has exactly that head commit and changes only the allowed regional lock/fixture/configuration and shared version files. It merges without bypassing repository protection rules. If those rules prevent merging, the job fails for maintainer attention.
+
+After merging, Sync waits until both regions use the same official version. It dispatches **Release** for `vVERSION-mac.1` only if that official version has no Mac release tag. This explicit workflow dispatch works with the Actions token; a bot-created tag or merge alone would not trigger another workflow. The Release workflow runs both regions' tests/builds/signing/packaging before publishing. Same-version resource republishing does not automatically produce another Mac revision. Failed release runs can be retried manually using their existing tag.
+
+This automation verifies source contracts and build/package checks. Real-account login, physical input/controller behavior, sleep/reward interactions and multiplayer retain the documented hands-on acceptance limits. A version needing manual adaptation remains a draft and requires an explicitly requested release after that work.
+
 ## Running automation in this project
 
-Enable GitHub Actions in the repository and allow GitHub Actions to create and approve pull requests in repository Actions settings. The workflow requires repository contents, pull request and issue write permissions. It uses the current `github.repository` for PRs and reports. It does not need a personal account login or game credentials.
+Enable GitHub Actions in the repository and allow GitHub Actions to create and approve pull requests in repository Actions settings. To check immediately, open **Actions → Sync official regions → Run workflow**; the daily schedule remains enabled. The sync jobs require repository contents, pull request and issue write permissions. The final merge/release job also requires Actions write permission to dispatch Release. It uses the current `github.repository` for PRs and reports. It does not need a personal account login or game credentials.
 
 CI downloads resources from the official installer CDN and stores verified installers in GitHub Actions caches. Uncached builds need a working connection to the official CDN. Resources are never published in a separate release; release assets contain only Mac app packages.
 

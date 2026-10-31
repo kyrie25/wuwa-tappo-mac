@@ -3,6 +3,10 @@
 <h1 align="center">Wuwa Tappo for Mac</h1>
 
 <p align="center">An English WuWa desktop pet for macOS, with separate CN and Global apps.</p>
+<p align="center">
+  <a href="https://github.com/kyrie25/wuwa-tappo-mac/actions/workflows/ci.yml"><img src="https://github.com/kyrie25/wuwa-tappo-mac/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/kyrie25/wuwa-tappo-mac/actions/workflows/release.yml"><img src="https://github.com/kyrie25/wuwa-tappo-mac/actions/workflows/release.yml/badge.svg" alt="Release status"></a>
+</p>
 <p align="center"><strong><a href="https://github.com/kyrie25/wuwa-tappo-mac/releases/latest">Download</a></strong> · <a href="docs/USER_GUIDE.md">User guide</a> · <a href="https://github.com/kyrie25/wuwa-tappo-mac/issues">Issues</a></p>
 
 ## Installation
@@ -13,7 +17,7 @@ Requires **Apple Silicon (M series)** and **macOS 13 or later**.
 2. Open the DMG and drag **Wuwa Tappo** into **Applications**.
 3. Launch the app.
 
-> [!NOTE]
+> [!IMPORTANT]
 > Both apps are named `Wuwa Tappo.app`. Install them in separate folders if you use both regions.
 
 ## Updates
@@ -22,7 +26,7 @@ Choose **Settings → Check for Updates → Update and Restart**. Settings, coun
 
 ## Troubleshooting
 
-> [!NOTE]
+> [!WARNING]
 > These builds are not notarized by Apple. If macOS blocks launch, attempt to open the app, then use **System Settings → Privacy & Security → Open Anyway**.
 
 - **Counting stops:** Choose **Restart Input Counting** from the app's menu, or restart the app. Avoid running multiple copies.
@@ -34,8 +38,8 @@ See the [user guide](docs/USER_GUIDE.md) for login, language details and verific
 
 > [!NOTE]
 > Ordinary key presses and supported mouse clicks count without Input Monitoring or Accessibility permission. Held-key repeats, modifier-only presses and media keys are excluded.
->
-> F7 toggles Game Mode, F8 switches screens and F9 shows or hides the pet. Some keyboards require Fn. Change or clear bindings in Settings.
+
+F7 toggles Game Mode, F8 switches screens and F9 shows or hides the pet. Some keyboards require Fn. Change or clear bindings in Settings.
 
 ## Development
 

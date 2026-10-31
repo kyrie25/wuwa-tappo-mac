@@ -103,7 +103,7 @@ jobs:
         if: steps.extract.outcome == 'success'
         run: |
           set -o pipefail
-          { npm run icons && npm run prepare:frontend && npm test; } 2>&1 | tee .work/upstream-frontend.log
+          { node scripts/upstream-review.mjs prepare-compatible && npm run icons && npm run prepare:frontend && npm test; } 2>&1 | tee .work/upstream-frontend.log
       - name: Test native backend
         id: native-tests
         if: steps.upstream.outputs.changed == 'true'
@@ -167,3 +167,37 @@ jobs:
       - name: Report incompatible or unavailable upstream
         if: failure()
         run: node scripts/upstream-review.mjs report
+      - name: Keep candidate merge identity
+        if: always() && steps.extract.outcome == 'success'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: official-${{ matrix.region }}-candidate-metadata
+          path: .work/upstream-review/candidate.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 30
+  release-compatible:
+    name: Merge compatible updates and request release
+    needs: sync
+    if: always() && !cancelled()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version-file: .node-version
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: official-*-candidate-metadata
+          path: .work/sync-candidates
+      - name: Merge validated candidates and dispatch Release when both regions align
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/release-official.mjs

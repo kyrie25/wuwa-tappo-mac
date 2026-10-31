@@ -10,12 +10,12 @@ Choose the DMG or ZIP with **Global** in its name for a Global account, or **CN*
 
 Open the DMG and drag **Wuwa Tappo** into **Applications**. For a ZIP, extract it and move the app there.
 
-> [!NOTE]
+> [!IMPORTANT]
 > Both regional apps are named `Wuwa Tappo.app`. If you want both, keep them in separate folders, such as `Applications/Wuwa Global/` and `Applications/Wuwa CN/`.
 
 ## macOS blocked the app. What do I do?
 
-> [!NOTE]
+> [!WARNING]
 > These builds are not notarized by Apple. After downloading from this repository's release page and attempting to open the app, use **System Settings → Privacy & Security → Open Anyway** if macOS blocks launch.
 
 Releases use a stable self-signed identity. This helps preserve Keychain access across updates; it does not provide Apple's Gatekeeper trust or notarization. See [app signing](MAC_SIGNING.md) for the details.

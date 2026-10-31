@@ -94,13 +94,15 @@ Every future macOS adaptation must update the adaptation record or its linked im
 
 Main-branch pushes and pull requests run regional checks. Each region verifies and extracts official resources, runs JavaScript and Rust tests, builds the native app and packages it. Caches and artifacts are separated by region.
 
-A `vBASE-mac.REVISION` tag triggers Release. Publication waits for both regions and uploads the complete CN/Global DMG, ZIP, signed updater archive and updater signature set. Manual release dispatch is supported. Official resource installers must never be published as release assets.
+To publish manually, open **Actions → Release → Run workflow** on GitHub. Select the branch to build (normally `main`). Leave **tag** blank to use the next Mac revision, or enter an existing tag to retry that build. Enter changelog bullet points unless a matching versioned notes file is already committed. The workflow validates metadata and notes, creates a missing tag, tests/builds/signs both regions, then publishes all eight Mac packages and signatures. Pushing a new `vBASE-mac.REVISION` tag also triggers Release; commit its prepared notes first. Branch/file changes alone do not trigger Release.
 
-For a verified app change, follow the repository's standing release policy. Increment the Mac revision independently of the official resource version. Follow the [release-note rules](../.github/release-notes/README.md): version-only title, Changelog and actionable Instructions, with the required hidden minimum-macOS metadata. Correct existing release-note wording in place without producing a new binary release solely for that correction.
+Release only when explicitly requested. Sync has separate authorization to merge compatible official updates and request a release once both regions use the same new version. Do not create an app version for README or documentation edits. Official installer resources must never be published as release assets.
+
+Follow the [release-note rules](../.github/release-notes/README.md): version-only title, Changelog and actionable Instructions, with the required hidden minimum-macOS metadata. Prepared files are read from the exact tagged commit. Otherwise, the manual changelog input supplies Changelog and the workflow adds installation/update Instructions. Correct existing release-note wording in place without producing a new binary release solely for that correction.
 
 ## Check for official resource updates
 
-Daily synchronization jobs check each regional service. Compatible updates produce an update PR; versions requiring adaptation produce a draft with contract differences and failure logs. Failures create a regional issue. Unverified versions are not automatically released.
+Daily synchronization jobs check each regional service. When the accepted frontend inventory is unchanged apart from its version, Sync updates version metadata and runs compatibility tests, native tests, builds and packaging. Passing candidates are merged automatically with their tested commit pinned. Once CN and Global use the same new official version, Sync dispatches Release; both release builds must pass before publication. Changed contracts or failing checks produce a draft PR and a regional issue, without automatic merging or publication. See [synchronization](SYNCHRONIZATION.md) for details and acceptance limits.
 
 To check and adopt a version locally, select a region first:
 

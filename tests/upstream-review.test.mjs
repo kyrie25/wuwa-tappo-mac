@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { exactIssueNumber, inventoryChanges, openUpdatePullRequest, reportFailure, updatePullRequestArguments, writeInventoryReview } from '../scripts/upstream-review.mjs';
+import { candidateFiles, exactIssueNumber, inventoryChanges, openUpdatePullRequest, reportFailure, updatePullRequestArguments, writeInventoryReview } from '../scripts/upstream-review.mjs';
 import { getRegionProfile } from '../scripts/regions.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -79,7 +79,7 @@ test('failure reports select only the exact regional issue title', () => {
   assert.equal(exactIssueNumber(issues.slice(0, 2), 'Official CN synchronization needs attention'), null);
 });
 
-test('update PR execution commits only its regional lock, selects draft after failure, and does nothing without a diff', async () => {
+test('update PRs commit reviewed metadata only after validation and use lock-only drafts after failure', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wuwa-upstream-pr-'));
   const environment = { GITHUB_REPOSITORY: 'owner/repo', GITHUB_RUN_ID: '123', ...Object.fromEntries(['inventory', 'frontend', 'native', 'build', 'package'].map(stage => [`${stage.toUpperCase()}_OUTCOME`, 'success'])) };
   try {
@@ -97,7 +97,7 @@ test('update PR execution commits only its regional lock, selects draft after fa
         assert.deepEqual(calls, [['git', ['diff', '--', `upstream-${region}.json`]]]);
         continue;
       }
-      assert.deepEqual(calls.find(([command, args]) => command === 'git' && args[0] === 'add'), ['git', ['add', '--', `upstream-${region}.json`]]);
+      assert.deepEqual(calls.find(([command, args]) => command === 'git' && args[0] === 'add'), ['git', ['add', '--', ...(frontend === 'success' ? candidateFiles(getRegionProfile(region)) : [`upstream-${region}.json`])]]);
       assert.deepEqual(calls.find(([command, args]) => command === 'git' && args[0] === 'push'), ['git', ['push', 'origin', `codex/official-${region}-1.0.2-123`]]);
       assert.equal(calls.at(-1)[0], 'gh');
       assert.equal(calls.at(-1)[1].includes('--draft'), frontend === 'failure');
