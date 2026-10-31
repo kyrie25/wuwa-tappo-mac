@@ -38,6 +38,14 @@ Repository, issue and Mac distribution links refer to this project. Original lic
 
 `storage.rs` stores validated numeric counters separately by environment/account, with bounded values and atomic writes. `socket.rs` and `scripts/mac-websocket.js` provide native regional WebSocket connections. Official account, reward and multiplayer rules remain authoritative; local success is not a substitute for real-account testing.
 
+## Gallery images while signed out
+
+The pet can start from bundled resources using the `__local_role_assets__` marker. The original panel snapshot shares that marker with Gallery, whose catalog loader skips local resources. Most Gallery thumbnails are only available through the public appearance catalog, so their image URLs resolve to an empty string even when the catalog was previously cached.
+
+`patchMacPanelAssetHost` in `scripts/patch-frontend.mjs` replaces an empty/local host in the panel snapshot with the selected region's official HTTPS asset origin. The existing panel loader then fetches its public catalog and resolves item IDs to current image paths. An already selected remote host is retained. The pet's own local source and account/login rules are unchanged. No account is needed to view public Gallery artwork; downloading uncached artwork still requires a working connection to the official service. Preparation stops if the original snapshot shape changes.
+
+`tests/gallery-images.test.mjs` executes the original/prepared snapshot expressions, original catalog-loader function and image resolver. It reproduces the local-marker failure and verifies regional fallback, catalog loading, version forwarding and preservation of remote hosts. Both regional suites pass. An isolated macOS WKWebView harness using the actual Global Gallery component and live public data reproduced zero decoded thumbnails with the local marker, then decoded all 15 sampled character/emote thumbnails with the public host. This verifies rendering without an account; a complete real-account login flow is outside this check.
+
 ## Chest countdowns across sleep
 
 The official frontend measures its server-synchronized clock and newly started chest deadlines with `performance.now()`. On macOS, WebKit excludes system sleep from this clock, so a minute with the lid closed could reduce a countdown by only the few seconds the Mac remained awake.

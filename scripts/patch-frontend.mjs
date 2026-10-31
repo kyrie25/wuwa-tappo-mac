@@ -101,6 +101,26 @@ export function patchGlobalAuthListener(source) {
   return source.replace(bridge, wake).replace(current + listener, listener + current);
 }
 
+export function patchMacPanelAssetHost(source, assetsOrigin) {
+  const tree = parse(source, { sourceType: 'module', ecmaVersion: 'latest' });
+  const targets = [];
+  function visit(node) {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'ObjectExpression' && ['streamId', 'assetsJsonTs', 'atlasList'].every(key => node.properties.some(property => property.key?.name === key))) {
+      const property = node.properties.find(property => property.key?.name === 'assetsCdnHost');
+      if (property) targets.push(property.value);
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) value.forEach(visit);
+      else if (value && typeof value === 'object') visit(value);
+    }
+  }
+  visit(tree);
+  if (targets.length !== 1) throw new Error('Original panel asset snapshot changed; reconcile Gallery image loading before building.');
+  const value = targets[0], host = source.slice(value.start, value.end);
+  return source.slice(0, value.start) + `(${host}&&${host}!=="__local_role_assets__"?${host}:${JSON.stringify(assetsOrigin)})` + source.slice(value.end);
+}
+
 export function patchMacLayoutBarriers(source) {
   const tree = parse(source, { sourceType: 'module', ecmaVersion: 'latest' });
   const targets = [];

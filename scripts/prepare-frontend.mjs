@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { getRegionProfile } from './regions.mjs';
 import { patchEnglishFrontend } from './english-frontend.mjs';
-import { patchSessionBarriers, patchLoginReady, patchDomesticSdkUrls, patchMacUpdateFeedback, patchMacUpdater, patchMacAbout, patchDomesticLoginReload, patchGlobalAuthListener, patchMacLayoutBarriers, patchMacChestClock } from './patch-frontend.mjs';
+import { patchSessionBarriers, patchLoginReady, patchDomesticSdkUrls, patchMacUpdateFeedback, patchMacUpdater, patchMacAbout, patchDomesticLoginReload, patchGlobalAuthListener, patchMacLayoutBarriers, patchMacChestClock, patchMacPanelAssetHost } from './patch-frontend.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const profile = getRegionProfile();
@@ -33,7 +33,7 @@ function patchOne(description, matches, patch) {
 patchOne('modal event bridge', name => /\/modalBridge-[^/]+\.js$/.test(name), patchLoginReady);
 patchOne('update feedback view', (_, content) => /\.value=[$\w]+\("setting_version_check_failed"\)/.test(content), patchMacUpdateFeedback);
 patchOne('About view', (_, content) => /t=[$\w]+\(\(\)=>k\("about_content"\)/.test(content), content => patchMacAbout(content, profile.region));
-patchOne('main layout view', (_, content) => content.includes('[main] window layout during open failed'), content => patchMacChestClock(patchMacLayoutBarriers(content)));
+patchOne('main layout view', (_, content) => content.includes('[main] window layout during open failed'), content => patchMacPanelAssetHost(patchMacChestClock(patchMacLayoutBarriers(content)), profile.assetsOrigin));
 if (profile.region === 'CN') patchOne('domestic SDK loader', (name, content) => name !== entry && content.includes('t.dataset.kuroSdkRetry="true"'), patchDomesticLoginReload);
 
 await rm(output, { recursive: true, force: true });
