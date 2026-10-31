@@ -34,6 +34,14 @@ Repository, issue and Mac distribution links refer to this fork. Original licens
 
 `storage.rs` stores validated numeric counters separately by environment/account, with bounded values and atomic writes. `socket.rs` and `scripts/mac-websocket.js` provide native regional WebSocket connections. Official account, reward and multiplayer rules remain authoritative; local success is not a substitute for real-account testing.
 
+## Chest countdowns across sleep
+
+The official frontend measures its server-synchronized clock and newly started chest deadlines with `performance.now()`. On macOS, WebKit excludes system sleep from this clock, so a minute with the lid closed could reduce a countdown by only the few seconds the Mac remained awake.
+
+`patchMacChestClock` in `scripts/patch-frontend.mjs`, applied during frontend preparation for both regions, uses `Date.now()` for those four clock reads. It retains the server timestamp and measures elapsed wall time from the synchronization point; newly started left/right timers use wall-time deadlines too. The existing timer refresh catches up on its first tick after wake, without replaying missed ticks. Animations and performance measurements retain their original clocks. The patch requires unique known upstream anchors and stops preparation if the clock implementation changes.
+
+`tests/chest-countdown.test.mjs` executes the original and prepared countdown functions with independent wall/awake clocks. It reproduces the lost sleep interval, then verifies full elapsed time, repeated sleep cycles, both newly started chest timers, expiry at zero, server resynchronization and login/readiness gates in both regional builds. These are simulated sleep tests; physical lid-close/wake and real account reward claims remain unverified. Manual/system wall-clock adjustments can affect the displayed estimate until server resynchronization. Reward eligibility and claiming remain controlled by the official service.
+
 ## Fork updates
 
 [Mac updates](MAC_UPDATES.md) documents discovery, signatures, installation, key management and publication. The initial fork updater in mac.4 used browser downloads/manual replacement. The automatic installer adds signed, version-bound regional archives, bounded native downloads, progress, original counter/socket shutdown hooks, session flushing, native bundle replacement and relaunch. It retains the app's English fonts, artwork, brown/cream palette and rounded controls.

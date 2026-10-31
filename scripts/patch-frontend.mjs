@@ -145,4 +145,20 @@ export function patchMacLayoutBarriers(source) {
 }`;
   return helper + source;
 }
+
+export function patchMacChestClock(source) {
+  // WebKit's performance clock excludes Mac sleep. Keep the server offset,
+  // but measure chest deadlines with wall time so they catch up after wake.
+  const anchors = [
+    'function fg(n){return typeof n!="number"||!Number.isFinite(n)||n<=0?!1:(Ys=n,dd=performance.now(),!0)}',
+    'function is(){return Ys===null?Date.now():Ys+(performance.now()-dd)}',
+    'const e=is(),t=performance.now();Nt.value=kr===null?',
+    'function Cp(e){const t=performance.now()+fr;',
+  ];
+  for (const anchor of anchors) {
+    if (source.split(anchor).length !== 2) throw new Error('Original chest clock changed; reconcile sleep-aware countdowns before building.');
+    source = source.replace(anchor, anchor.replace('performance.now()', 'Date.now()'));
+  }
+  return source;
+}
 import { parse } from 'acorn';
