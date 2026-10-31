@@ -57,6 +57,12 @@ jobs:
           if [[ "$BUILD_REF" =~ ^(refs/tags/)?(v[0-9]+\.[0-9]+\.[0-9]+-mac\.[0-9]+)$ ]]; then
             echo "WUWA_FORK_VERSION=${BASH_REMATCH[2]}" >> "$GITHUB_ENV"
           fi
+      - name: Verify stable signing and Keychain continuity
+        if: env.WUWA_FORK_VERSION != ''
+        env:
+          WUWA_CODESIGN_P12: ${{ secrets.WUWA_CODESIGN_P12 }}
+          WUWA_CODESIGN_PASSWORD: ${{ secrets.WUWA_CODESIGN_PASSWORD }}
+        run: bash scripts/test-macos-signing.sh
       - name: Read pinned official installer cache identity
         id: installer
         run: node scripts/installer-cache.mjs
@@ -102,9 +108,7 @@ jobs:
         env:
           WUWA_CODESIGN_P12: ${{ secrets.WUWA_CODESIGN_P12 }}
           WUWA_CODESIGN_PASSWORD: ${{ secrets.WUWA_CODESIGN_PASSWORD }}
-        run: |
-          bash scripts/test-macos-signing.sh
-          bash scripts/sign-macos.sh 'src-tauri/target/release/bundle/macos/Wuwa Tappo.app'
+        run: bash scripts/sign-macos.sh 'src-tauri/target/release/bundle/macos/Wuwa Tappo.app'
       - name: Verify and package ZIP, DMG and signed updates
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets[matrix.signing_secret] }}

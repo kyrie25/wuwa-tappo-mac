@@ -21,13 +21,24 @@ cleanup() {
   rm -rf "$STAGE"
 }
 trap cleanup EXIT
+SEARCH_LIST=()
+while IFS= read -r entry; do
+  entry="${entry#*\"}"
+  SEARCH_LIST+=("${entry%\"*}")
+done < <(/usr/bin/security list-keychains -d user)
 printf '%s' "$WUWA_CODESIGN_P12" | /usr/bin/base64 --decode > "$STAGE/identity.p12"
 KEYCHAIN_PASSWORD=$(/usr/bin/openssl rand -hex 32)
+printf '%s\n' 'Signing phase: import isolated identity'
 /usr/bin/security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
 /usr/bin/security set-keychain-settings -lut 3600 "$KEYCHAIN"
 /usr/bin/security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
 /usr/bin/security import "$STAGE/identity.p12" -k "$KEYCHAIN" -P "$WUWA_CODESIGN_PASSWORD" -T /usr/bin/codesign >/dev/null
 /usr/bin/security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+# Older macOS codesign also needs the certificate in its search list.
+# Deleting our temporary Keychain removes only this entry during cleanup.
+/usr/bin/security list-keychains -d user -s "$KEYCHAIN" "${SEARCH_LIST[@]}"
+printf '%s\n' 'Signing phase: select pinned identity and sign'
+/usr/bin/security find-identity -p codesigning "$KEYCHAIN"
 /usr/bin/codesign --force --sign "$FINGERPRINT" --keychain "$KEYCHAIN" --timestamp=none \
   --requirements "=designated => $REQUIREMENT" "$APP"
 /usr/bin/codesign --verify --deep --strict -R "=$REQUIREMENT" "$APP"

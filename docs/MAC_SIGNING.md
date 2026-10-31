@@ -16,7 +16,7 @@ Moving from an ad-hoc build or the old bundle ID can require an initial Keychain
 identifier "REGIONAL_BUNDLE_ID" and certificate leaf = H"PINNED_CERTIFICATE_SHA1"
 ```
 
-The certificate fingerprint is read from the committed public certificate; this SHA-1 field is Apple's certificate requirement syntax, not the executable's changing code hash. The script signs with that exact certificate, disables network timestamping, and verifies the result against the requirement. Temporary Keychains and credential copies are deleted on exit, including failures. No login-Keychain import or trust change is required on build or user machines.
+The certificate fingerprint is read from the committed public certificate; this SHA-1 field is Apple's certificate requirement syntax, not the executable's changing code hash. The script signs with that exact certificate, disables network timestamping, and verifies the result against the requirement. On build machines, it temporarily adds its Keychain to the search list while preserving existing entries, as required by older macOS signing tools. Deleting that Keychain removes its search entry. Temporary Keychains and credential copies are deleted on exit, including failures. No login-Keychain import or trust change is required on build or user machines.
 
 The reusable build workflow signs only tagged release builds. Ordinary source/PR builds retain explicit ad-hoc signing without secrets. Tagged packaging independently checks the app's pinned signer and regional identifier before producing distribution/update packages. Missing credentials, an unexpected signer or invalid signatures stop publication. No bundle content is modified after signing.
 
