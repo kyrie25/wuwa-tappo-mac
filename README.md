@@ -1,116 +1,46 @@
-# Wuwa Tappo · macOS
+![Wuwa Tappo Backpack and desktop pet on macOS](docs/images/wuwa-tappo.png)
 
-[![Build](https://github.com/kyrie25/wuwa-tappo-mac/actions/workflows/ci.yml/badge.svg)](https://github.com/kyrie25/wuwa-tappo-mac/actions/workflows/ci.yml)
-[![Download](https://img.shields.io/github/v/release/kyrie25/wuwa-tappo-mac?label=Download)](https://github.com/kyrie25/wuwa-tappo-mac/releases/latest)
+<h1 align="center">Wuwa Tappo for Mac</h1>
 
-**Wuwa Tappo for Mac, in English, for CN and Global accounts.** Uses the official regional interface, characters and services with a native Rust + Tauri backend. No Wine, Windows or virtual machine is required.
+<p align="center">An English WuWa desktop pet for macOS, with separate CN and Global apps.</p>
+<p align="center"><strong><a href="https://github.com/kyrie25/wuwa-tappo-mac/releases/latest">Download</a></strong> · <a href="docs/USER_GUIDE.md">User guide</a> · <a href="https://github.com/kyrie25/wuwa-tappo-mac/issues">Issues</a></p>
 
-Wuwa Tappo is a macOS desktop companion for CN and Global accounts, maintained by [kyrie25](https://github.com/kyrie25). The two regional apps include version **1.0.3** resources and start in English. Accounts and services remain separate.
+## Installation
 
-## Download and use
+Requires **Apple Silicon (M series)** and **macOS 13 or later**.
 
-Choose the `.dmg` for your account's region from [Releases](https://github.com/kyrie25/wuwa-tappo-mac/releases), then drag the app into Applications. Alternatively, extract the corresponding `.zip`.
+1. Download the DMG from [Releases](https://github.com/kyrie25/wuwa-tappo-mac/releases/latest): **Global** for Global accounts, **CN** for Mainland China accounts.
+2. Open the DMG and drag **Wuwa Tappo** into **Applications**.
+3. Launch the app.
 
-| Service region | Application | Package prefix |
-| --- | --- | --- |
-| Mainland China | **Wuwa Tappo.app** | `WuwaTappo-CN-Mac` |
-| Global | **Wuwa Tappo.app** | `WuwaTappo-Global-Mac` |
+> [!NOTE]
+> Both apps are named `Wuwa Tappo.app`. Install them in separate folders if you use both regions.
 
-Both apps are named **Wuwa Tappo**. To keep both installed, put them in separate folders (for example, `Applications/Wuwa CN/` and `Applications/Wuwa Global/`) so one does not replace the other. The apps use `io.github.kyrie25.wuwatappo.cn.mac` and `io.github.kyrie25.wuwatappo.global.mac` bundle IDs. On first launch after upgrading, each region imports its existing counters, shortcuts, WebKit settings and remembered Keychain login from the old identity without replacing data already saved under the new identity. Original data is retained for recovery, and subsequent launches do not re-import deleted data or logged-out sessions. macOS may request authorization to read the old Keychain item. Account data is never migrated between regions. Quit older copies before upgrading; when moving from the older regional app names, remove the old app after installing the new one.
+## Updates
 
-- **Requirements:** Apple Silicon (M series), macOS 13 or later. No Intel build is currently provided.
-- **Included resources:** Each package includes its regional interface and embedded assets. No separate EXE download or extraction is needed. Login, asset updates and online features require internet access.
-- **First launch:** These builds are not notarized by Apple. If macOS blocks the app, verify its source, then use System Settings → Privacy & Security → Open Anyway.
-- **Input counting:** Ordinary key presses and supported mouse clicks work without Input Monitoring or Accessibility permission. Held-key autorepeat, modifier-only presses and media keys do not add keyboard counts. See [how permission-free input works](docs/PERMISSION_FREE_INPUT.md).
-- **Login:** CN uses the official embedded login; Global uses official browser login with a callback to the app. Login is remembered automatically using macOS Keychain; no startup storage-choice prompt is shown. Releases use a [persistent self-signed app identity](docs/MAC_SIGNING.md) to retain Keychain access across updates. Initial migration or user Keychain policies may still require authorization. This does not provide Gatekeeper trust or notarization.
-- **Language:** App-owned menus, prompts and bundled interface text are English. Login pages, announcements and other content served by Kuro may use the service's language. Character artwork and audio remain the original assets.
+Choose **Settings → Check for Updates → Update and Restart**. Settings, counters and remembered login are retained.
 
-Quit the old app before replacing it in Applications. Avoid running multiple copies. If input stops responding after an update, use **Restart Input Counting** in the menu or restart the app. Existing Input Monitoring or Accessibility grants are unnecessary for counting and can be removed in System Settings.
+## Troubleshooting
 
-## Features and verification status
+> [!NOTE]
+> These builds are not notarized by Apple. If macOS blocks launch, attempt to open the app, then use **System Settings → Privacy & Security → Open Anyway**.
 
-- Transparent desktop pet, monitor positioning, scaling, always-on-top and click-through.
-- Permission-free keyboard counting and native mouse interactions, with status feedback and automatic recovery.
-- Controller button counting and clap feedback, following official 1.0.3 counting rules.
-- Local click counters isolated by app, account and service environment, using the official sync protocol.
-- Official regional login, panels, characters and item views.
-- Native WebSocket multiplayer connections, room creation and leaving.
-- Menu bar controls, launch at login, redacted logs and login session management.
-- Configurable global shortcuts: F7 toggles Game Mode, F8 switches screens and F9 toggles the pet by default. Change or clear bindings in Settings. Mac modifier labels use Cmd and Option. Shortcuts pause while recording a replacement. Depending on your keyboard settings, function keys may require Fn.
+- **Counting stops:** Choose **Restart Input Counting** from the app's menu, or restart the app. Avoid running multiple copies.
+- **Gallery images don't load:** Uncached images require access to the official image service.
 
-The upstream project previously verified CN startup, official login, room creation and leaving on a real Mac, and Global startup, About and settings panels. Global browser login, real account callbacks and two-player multiplayer still need hands-on acceptance testing. Input counting uses public aggregate keyboard counters and mouse-only AppKit monitors without a permission prompt. Controller support uses Apple's GameController API and needs a physical controller test. Chest claims, synthesis, redemption codes and multi-monitor combinations have not been comprehensively verified. Rewards use official services; the app does not simulate rewards locally.
+See the [user guide](docs/USER_GUIDE.md) for login, language details and verification limits, or [open an issue](https://github.com/kyrie25/wuwa-tappo-mac/issues).
 
-**Check for Updates** checks Wuwa Tappo’s GitHub Releases and compares the full Mac release revision. When a signed update is available, **Update and Restart** downloads, verifies and installs the matching regional app, then relaunches it. Users on mac.4 or earlier must manually install the first automatic-updater release once. Manual DMG/ZIP downloads remain available. Settings, counters and remembered login are preserved. Source builds without a release identity show the latest published build without claiming they are up to date. See [the Mac update flow](docs/MAC_UPDATES.md).
+## Input counting and shortcuts
 
-## Build from source
+> [!NOTE]
+> Ordinary key presses and supported mouse clicks count without Input Monitoring or Accessibility permission. Held-key repeats, modifier-only presses and media keys are excluded.
+>
+> F7 toggles Game Mode, F8 switches screens and F9 shows or hides the pet. Some keyboards require Fn. Change or clear bindings in Settings.
 
-Requires macOS, Xcode Command Line Tools, Node.js 26.13.0 (pinned in `.node-version`), [rustup](https://rustup.rs/) (the Rust version is pinned in `rust-toolchain.toml`) and 7-Zip.
+## Development
 
-```bash
-xcode-select --install
-brew install node sevenzip
-git clone https://github.com/kyrie25/wuwa-tappo-mac.git
-cd wuwa-tappo-mac
-npm ci
-npm run setup
-npm test
-npm run test:rust
-npm run build
-npm run package
-```
+[Build from source](docs/BUILDING.md) · [Mac implementation](docs/MAC_PORT.md) · [Input counting](docs/PERMISSION_FREE_INPUT.md)
 
-The default region is CN. For Global:
+## Credits and license
 
-```bash
-export WUWA_REGION=global
-npm run setup
-npm test
-npm run test:rust
-npm run build
-npm run package
-```
-
-Set `WUWA_REGION=cn` to switch back. Shortcuts such as `npm run setup:global` and `npm run build:global` are also available; select the matching `WUWA_REGION` when running tests.
-
-`setup` downloads the installer pinned in `upstream-cn.json` or `upstream-global.json`, verifies its integrity, statically extracts assets and prepares the English frontend. It never executes Windows software and requires no account login. To reuse a downloaded pinned installer (CN example):
-
-```bash
-export WUWA_REGION=cn
-npm run assets:sync -- --installer "$HOME/Downloads/WuwaTappo-cn_1.0.3_x64-setup.exe"
-npm run icons
-npm run prepare:frontend
-```
-
-Built apps are under `src-tauri/target/release/bundle/macos/`; distribution packages are under `dist/`. CN uses `frontend/`, Global uses `frontend-global/`, and each has separate prepared assets and icons. Official resources, `build/`, `dist/` and local caches are excluded from Git. Resources are acquired at build time and embedded in the app.
-
-## CI, releases and official version synchronization
-
-- **Commits and pull requests:** Each region independently downloads assets, runs JavaScript and Rust tests, builds the native app and packages ZIP/DMG files. Caches and artifacts are isolated by region.
-- **Releases:** A `v*` tag (for example `v1.0.3-mac.1`) runs checks for both regions. All regional DMG/ZIP and signed updater packages are published in one release only after both pass. Verified app changes receive a release by default; purely CI changes and explicit user exceptions do not. Manual releases are also supported.
-- **Official synchronization:** Daily jobs check each official service. Compatible updates produce an update PR; extracted versions that need adaptation produce a draft with contract differences and failure logs. Failures create a regional issue. Unverified versions are never automatically released.
-- **Resource cache:** CI downloads installers from official sources and caches them by region and resource lock. Every reuse verifies the official SHA-256 and size. Installers are never published as release assets; releases contain the Mac app packages.
-
-Check or synchronize the selected region locally (set `WUWA_REGION=global` for Global):
-
-```bash
-npm run upstream:check
-npm run upstream:update
-npm run setup
-npm test
-npm run test:rust
-npm run build
-```
-
-See [the port adaptation record](docs/MAC_PORT.md) for the native bridge, English preparation, regional separation, session/counter storage, input, shortcuts and update implementation. Every future port adaptation must update that record or its linked implementation guide.
-
-See [synchronization troubleshooting](docs/SYNCHRONIZATION.md) for the 1.0.3 extraction failure and the steps required before adopting a new official version. Accepted contract snapshots describe the unmodified official frontend. Review contract changes before updating those snapshots; English preparation happens afterward.
-
-## Acknowledgements
-
-Wuwa Tappo builds on the original [Last-emo-boy/wuwa-tappo-mac](https://github.com/Last-emo-boy/wuwa-tappo-mac) macOS implementation. Credit for that backend and the original porting work belongs to its contributors. Original copyright and MIT license notices are retained.
-
-## Privacy and licensing
-
-Packages contain no maintainer credentials, Keychain contents, account caches, click history or logs. Normal launches remember credentials in the system Keychain. Explicit test launches with `--session-only` keep credentials in memory. Native input monitoring responds to key presses/clicks without recording typed text.
-
-Original macOS backend and adaptation tools use the [MIT License](LICENSE). Official interface, characters, artwork, audio and third-party dependencies retain their original rights and licenses; bundling does **not** relicense them under MIT. See [third-party notices](THIRD_PARTY_NOTICES.md).
+Maintained by [kyrie25](https://github.com/kyrie25), building on the original [macOS implementation](https://github.com/Last-emo-boy/wuwa-tappo-mac) and its contributors. Code uses the [MIT License](LICENSE). Official artwork and other resources retain their owners' rights; see [third-party notices](THIRD_PARTY_NOTICES.md).
