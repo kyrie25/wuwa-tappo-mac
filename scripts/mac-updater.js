@@ -83,7 +83,7 @@
     displayedVersion = undefined;
     for (const name of ['retry', 'release', 'download', 'install', 'notes', 'instructions', 'asset']) field(name).hidden = true;
     field('title').textContent = 'Checking for Updates';
-    field('status').textContent = 'Checking this fork’s GitHub Releases…';
+    field('status').textContent = 'Checking for updates…';
     if (!dialog.open) dialog.showModal();
   }
 
@@ -92,10 +92,10 @@
       ? `Installed: v${info.currentVersion}` : `Development build · official resources v${info.resourceVersion}`;
     if (info.status === 'upToDate') {
       field('title').textContent = 'You’re Up to Date';
-      field('status').textContent = `No newer fork release is available for v${info.currentVersion}.`;
+      field('status').textContent = 'Wuwa Tappo is up to date.';
     } else if (info.status === 'noRelease') {
       field('title').textContent = 'No Published Mac Release';
-      field('status').textContent = 'This fork has no published stable Mac release yet. Try again later.';
+      field('status').textContent = 'No stable release is available yet. Try again later.';
     } else {
       field('title').textContent = info.status === 'development' ? 'Latest Published Release' : 'Update Available';
       field('status').textContent = info.status === 'development'
@@ -125,7 +125,7 @@
       const [info] = await Promise.all([request, identity]);
       if (interactive) render(info);
       if (info.status === 'upToDate') return { kind: 'none', currentVersion: info.currentVersion };
-      return { kind: 'external', message: info.release ? `Latest fork release: v${info.release.version}. Open the update dialog to install or download it.` : 'No published Mac release is available.' };
+      return { kind: 'external', message: info.release ? `Latest release: v${info.release.version}. Open the update dialog to install or download it.` : 'No published Mac release is available.' };
     } catch (error) {
       const text = message(error);
       if (interactive) {

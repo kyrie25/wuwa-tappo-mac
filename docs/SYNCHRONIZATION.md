@@ -1,6 +1,6 @@
 # Official resource synchronization
 
-This fork's automation checks the official Kuro CN and Global distributions. Repository links, Mac releases and workflow reports belong to [kyrie25/wuwa-tappo-mac](https://github.com/kyrie25/wuwa-tappo-mac). Kuro's service and asset domains remain regional official endpoints.
+Resource synchronization checks the official Kuro CN and Global distributions. Repository links, Mac releases and workflow reports belong to [kyrie25/wuwa-tappo-mac](https://github.com/kyrie25/wuwa-tappo-mac). Kuro's service and asset domains remain regional official endpoints.
 
 ## October 30, 2026 failure
 
@@ -33,14 +33,14 @@ For the next official version:
 
 The sync workflow retains contract differences and validation logs and opens a draft PR when extraction succeeds but compatibility fails. Extraction alone does not establish native compatibility.
 
-## Running automation in this fork
+## Running automation in this project
 
-Enable GitHub Actions in the fork and allow GitHub Actions to create and approve pull requests in repository Actions settings. The workflow requires repository contents, pull request and issue write permissions. It uses the current `github.repository` for PRs and reports. It does not need a personal account login or game credentials.
+Enable GitHub Actions in the repository and allow GitHub Actions to create and approve pull requests in repository Actions settings. The workflow requires repository contents, pull request and issue write permissions. It uses the current `github.repository` for PRs and reports. It does not need a personal account login or game credentials.
 
 CI downloads resources from the official installer CDN and stores verified installers in GitHub Actions caches. Uncached builds need a working connection to the official CDN. Resources are never published in a separate release; release assets contain only Mac app packages.
 
 ## In-app Check for Update
 
-Mac app updates use [this fork’s Releases](https://github.com/kyrie25/wuwa-tappo-mac/releases), separately from official resource synchronization. Check for Updates compares the embedded fork release revision, then offers signed installation through Update and Restart, with manual CN/Global downloads as a fallback. It does not install official Windows updates. See [Mac update discovery and publishing](MAC_UPDATES.md) for release identity, metadata and validation requirements.
+Mac app updates use [Wuwa Tappo’s Releases](https://github.com/kyrie25/wuwa-tappo-mac/releases), separately from official resource synchronization. Check for Updates compares the embedded Mac release revision, then offers signed installation through Update and Restart, with manual CN/Global downloads as a fallback. It does not install official Windows updates. See [Mac update discovery and publishing](MAC_UPDATES.md) for release identity, metadata and validation requirements.
 
 If the issue you are investigating instead concerns account counters, inventory or multiplayer state, reproduce it with the selected region, app version, exact actions and redacted application logs. Never include login tokens or Keychain contents in an issue.

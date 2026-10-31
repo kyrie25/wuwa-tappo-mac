@@ -61,6 +61,6 @@ test('the English About fallback identifies the Mac build and original Windows r
   const about = findSource(source => /t=[$\w]+\(\(\)=>k\("about_content"\)/.test(source));
   const prepared = await readFile(path.join(root, profile.preparedDir, 'assets', about.name), 'utf8');
   assert.ok(!/<h2 data-v-[a-f0-9]+>Device Requirements<\/h2>/.test(prepared));
-  const paragraphs = [...prepared.matchAll(/<h2 data-v-[a-f0-9]+>macOS community build<\/h2>/g)];
+  const paragraphs = [...prepared.matchAll(/<h2 data-v-[a-f0-9]+>Wuwa Tappo<\/h2>/g)];
   assert.ok(paragraphs.length >= 3, 'Mac information must appear in bundled English content and the remote banner');
 });

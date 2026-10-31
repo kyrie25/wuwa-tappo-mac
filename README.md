@@ -5,20 +5,18 @@
 
 **Wuwa Tappo for Mac, in English, for CN and Global accounts.** Uses the official regional interface, characters and services with a native Rust + Tauri backend. No Wine, Windows or virtual machine is required.
 
-This is a community-maintained, **unofficial macOS port**, maintained in [kyrie25/wuwa-tappo-mac](https://github.com/kyrie25/wuwa-tappo-mac). CN and Global are packaged separately and currently pin official version **1.0.3**. English is the default interface language in both builds. Regional accounts and services remain separate.
-
-Based on the original [Last-emo-boy/wuwa-tappo-mac](https://github.com/Last-emo-boy/wuwa-tappo-mac) macOS port. Credit for that backend and the original porting work belongs to its contributors; this fork maintains the English interface and subsequent Mac adaptations. Original copyright and MIT license notices are retained.
+Wuwa Tappo is a macOS desktop companion for CN and Global accounts, maintained by [kyrie25](https://github.com/kyrie25). The two regional apps include version **1.0.3** resources and start in English. Accounts and services remain separate.
 
 ## Download and use
 
-Choose the `.dmg` for your account's region from [Releases](https://github.com/kyrie25/wuwa-tappo-mac/releases), then drag the app into Applications. Alternatively, extract the corresponding `.zip`. If this fork has no release yet, build from source below.
+Choose the `.dmg` for your account's region from [Releases](https://github.com/kyrie25/wuwa-tappo-mac/releases), then drag the app into Applications. Alternatively, extract the corresponding `.zip`.
 
 | Service region | Application | Package prefix |
 | --- | --- | --- |
 | Mainland China | **Wuwa Tappo.app** | `WuwaTappo-CN-Mac` |
 | Global | **Wuwa Tappo.app** | `WuwaTappo-Global-Mac` |
 
-Both apps are named **Wuwa Tappo**. To keep both installed, put them in separate folders (for example, `Applications/Wuwa CN/` and `Applications/Wuwa Global/`) so one does not replace the other. This fork uses `io.github.kyrie25.wuwatappo.cn.mac` and `io.github.kyrie25.wuwatappo.global.mac` bundle IDs. On first launch after upgrading, each region imports its existing counters, shortcuts, WebKit settings and remembered Keychain login from the old identity without replacing data already saved under the new identity. Original data is retained for recovery, and subsequent launches do not re-import deleted data or logged-out sessions. macOS may request authorization to read the old Keychain item. Account data is never migrated between regions. Quit older copies before upgrading; when moving from the older regional app names, remove the old app after installing the new one.
+Both apps are named **Wuwa Tappo**. To keep both installed, put them in separate folders (for example, `Applications/Wuwa CN/` and `Applications/Wuwa Global/`) so one does not replace the other. The apps use `io.github.kyrie25.wuwatappo.cn.mac` and `io.github.kyrie25.wuwatappo.global.mac` bundle IDs. On first launch after upgrading, each region imports its existing counters, shortcuts, WebKit settings and remembered Keychain login from the old identity without replacing data already saved under the new identity. Original data is retained for recovery, and subsequent launches do not re-import deleted data or logged-out sessions. macOS may request authorization to read the old Keychain item. Account data is never migrated between regions. Quit older copies before upgrading; when moving from the older regional app names, remove the old app after installing the new one.
 
 - **Requirements:** Apple Silicon (M series), macOS 13 or later. No Intel build is currently provided.
 - **Included resources:** Each package includes its regional interface and embedded assets. No separate EXE download or extraction is needed. Login, asset updates and online features require internet access.
@@ -42,7 +40,7 @@ Quit the old app before replacing it in Applications. Avoid running multiple cop
 
 The upstream project previously verified CN startup, official login, room creation and leaving on a real Mac, and Global startup, About and settings panels. Global browser login, real account callbacks and two-player multiplayer still need hands-on acceptance testing. Input counting uses public aggregate keyboard counters and mouse-only AppKit monitors without a permission prompt. Controller support uses Apple's GameController API and needs a physical controller test. Chest claims, synthesis, redemption codes and multi-monitor combinations have not been comprehensively verified. Rewards use official services; the app does not simulate rewards locally.
 
-**Check for Updates** checks this fork’s GitHub Releases and compares the full Mac release revision. When a signed update is available, **Update and Restart** downloads, verifies and installs the matching regional app, then relaunches it. Users on mac.4 or earlier must manually install the first automatic-updater release once. Manual DMG/ZIP downloads remain available. Settings, counters and remembered login are preserved. Source builds without a release identity show the latest published build without claiming they are up to date. See [the Mac update flow](docs/MAC_UPDATES.md).
+**Check for Updates** checks Wuwa Tappo’s GitHub Releases and compares the full Mac release revision. When a signed update is available, **Update and Restart** downloads, verifies and installs the matching regional app, then relaunches it. Users on mac.4 or earlier must manually install the first automatic-updater release once. Manual DMG/ZIP downloads remain available. Settings, counters and remembered login are preserved. Source builds without a release identity show the latest published build without claiming they are up to date. See [the Mac update flow](docs/MAC_UPDATES.md).
 
 ## Build from source
 
@@ -106,6 +104,10 @@ npm run build
 See [the port adaptation record](docs/MAC_PORT.md) for the native bridge, English preparation, regional separation, session/counter storage, input, shortcuts and update implementation. Every future port adaptation must update that record or its linked implementation guide.
 
 See [synchronization troubleshooting](docs/SYNCHRONIZATION.md) for the 1.0.3 extraction failure and the steps required before adopting a new official version. Accepted contract snapshots describe the unmodified official frontend. Review contract changes before updating those snapshots; English preparation happens afterward.
+
+## Acknowledgements
+
+Wuwa Tappo builds on the original [Last-emo-boy/wuwa-tappo-mac](https://github.com/Last-emo-boy/wuwa-tappo-mac) macOS implementation. Credit for that backend and the original porting work belongs to its contributors. Original copyright and MIT license notices are retained.
 
 ## Privacy and licensing
 

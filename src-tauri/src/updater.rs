@@ -131,7 +131,7 @@ fn minimum_os(release: &Release, version: Version) -> Result<[u64; 3], String> {
     if version >= Version([1, 0, 3, 1]) && version <= Version([1, 0, 3, 3]) {
         return Ok([13, 0, 0]);
     }
-    Err("The release does not declare its minimum macOS version. Open this fork’s Releases to check compatibility.".into())
+    Err("The release does not declare its minimum macOS version. Open Wuwa Tappo’s Releases to check compatibility.".into())
 }
 
 fn select_release(
@@ -142,7 +142,7 @@ fn select_release(
     os: &str,
 ) -> Result<Check, String> {
     let installed = current
-        .map(|tag| Version::parse(tag).ok_or("Invalid installed fork release version"))
+        .map(|tag| Version::parse(tag).ok_or("Invalid installed app version"))
         .transpose()?;
     let mut result = Check {
         status: "noRelease",
@@ -160,7 +160,7 @@ fn select_release(
     };
     let release_url = format!("{REPOSITORY}/releases/tag/{}", release.tag_name);
     if release.html_url != release_url {
-        return Err("Invalid release URL for this fork".into());
+        return Err("Invalid Wuwa Tappo release URL".into());
     }
     result.status = if installed.is_some_and(|v| version <= v) {
         "upToDate"
@@ -174,7 +174,7 @@ fn select_release(
         return Ok(result);
     }
     if arch != "aarch64" {
-        return Err("This fork has no update package for this Mac architecture".into());
+        return Err("No Wuwa Tappo update package is available for this Mac architecture".into());
     }
     let minimum = minimum_os(release, version)?;
     if os_version(os).ok_or("Could not determine this Mac’s macOS version")? < minimum {
@@ -256,7 +256,7 @@ fn http_error(status: u16) -> String {
         403 | 429 => {
             "GitHub denied the update check or its rate limit was reached. Try again later.".into()
         }
-        _ => format!("Could not check this fork’s releases (HTTP {status}). Try again later."),
+        _ => format!("Could not check for updates (HTTP {status}). Try again later."),
     }
 }
 

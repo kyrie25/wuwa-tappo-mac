@@ -2,7 +2,7 @@
 
 ## Wuwa Tappo CN and Global
 
-This project uses interface, character, artwork, audio, font and other embedded resources from the corresponding official regional client. Login and service requests use that region's official services. This content, its names and trademarks belong to Kuro Games and their respective rights holders and are not covered by this repository's MIT License. This fork applies English translations to bundled interface text.
+This project uses interface, character, artwork, audio, font and other embedded resources from the corresponding official regional client. Login and service requests use that region's official services. This content, its names and trademarks belong to Kuro Games and their respective rights holders and are not covered by this repository's MIT License. Wuwa Tappo applies English translations to bundled interface text.
 
 - CN download: https://download-mc-wuwatappo.kurogames-global.com/download/
 - Global download: https://download-wutheringwaves-wuwatappo.kurogames-global.com/download/en/
