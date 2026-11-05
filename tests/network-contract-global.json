@@ -1,12 +1,12 @@
 {
   "schemaVersion": 2,
-  "application": "WuwaTappo-global 1.0.3",
+  "application": "WuwaTappo-global 1.0.4",
   "region": "GLOBAL",
   "source": {
-    "main": "index-DnHotUmh.js",
-    "room": "index-CxsrU06E.js",
-    "login": "index-DnHotUmh.js",
-    "loginView": "login-BEc7g7o3.js"
+    "main": "index-CBYJTno0.js",
+    "room": "index-DRyeCNeO.js",
+    "login": "index-CBYJTno0.js",
+    "loginView": "login-Cvjq6MjV.js"
   },
   "http": {
     "baseUrl": "https://api-wutheringwaves-wuwatappo.kurogames-global.com",
@@ -91,7 +91,9 @@
         "path": "/api/auth/player/query",
         "parameters": [
           "cuid",
-          "is_domestic"
+          "is_domestic",
+          "accessToken",
+          "cname"
         ]
       },
       {
@@ -314,9 +316,9 @@
       "installerUrl",
       "requiresManualDownload"
     ],
-    "windowsInstallerFilename": "WuwaTappo-global_1.0.3_x64-setup.exe",
-    "windowsInstallerUrl": "https://wutheringwaves-wuwatappo.kurogames-global.com/app/64208fbd-fff2-4cfa-8457-4331dda0c054/WuwaTappo-global_1.0.3_x64-setup.exe",
-    "updateVersion": "1.0.3"
+    "windowsInstallerFilename": "WuwaTappo-global_1.0.4_x64-setup.exe",
+    "windowsInstallerUrl": "https://wutheringwaves-wuwatappo.kurogames-global.com/app/bcea8e4b-6805-407e-af8d-a45a26bc3727/WuwaTappo-global_1.0.4_x64-setup.exe",
+    "updateVersion": "1.0.4"
   },
   "nativeNetwork": {
     "event": "cat-native-network-status-changed",

@@ -34,7 +34,7 @@ patchOne('modal event bridge', name => /\/modalBridge-[^/]+\.js$/.test(name), pa
 patchOne('update feedback view', (_, content) => /\.value=[$\w]+\("setting_version_check_failed"\)/.test(content), patchMacUpdateFeedback);
 patchOne('About view', (_, content) => /t=[$\w]+\(\(\)=>k\("about_content"\)/.test(content), content => patchMacAbout(content, profile.region));
 patchOne('main layout view', (_, content) => content.includes('[main] window layout during open failed'), content => patchMacPanelAssetHost(patchMacChestClock(patchMacLayoutBarriers(content)), profile.assetsOrigin));
-if (profile.region === 'CN') patchOne('domestic SDK loader', (name, content) => name !== entry && content.includes('t.dataset.kuroSdkRetry="true"'), patchDomesticLoginReload);
+if (profile.region === 'CN') patchOne('domestic SDK loader', (name, content) => name !== entry && /\.dataset\.kuroSdkRetry="true"/.test(content), patchDomesticLoginReload);
 
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });

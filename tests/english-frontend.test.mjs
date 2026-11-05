@@ -28,12 +28,21 @@ test('prepared CN and Global locale starts in English regardless of saved or sys
 test('actual prepared update messages cover latest, disabled, failed and missing updates in English', async () => {
   const main = findSource(source => source.includes('function resolveUpdateMissingMessage('));
   const prepared = await readFile(path.join(root, profile.preparedDir, 'assets', main.name), 'utf8');
-  const message = vm.runInNewContext(declaration(prepared, 'resolveUpdateMissingMessage') + ';resolveUpdateMissingMessage');
-  assert.equal(message({ kind: 'none', currentVersion: '1.0.2' }), 'Already up to date (1.0.2)');
-  assert.equal(message({ kind: 'disabled' }), 'Updates are not enabled.');
-  assert.equal(message({ kind: 'error' }), 'Could not check for updates.');
+  const bindings = new Map(parse(prepared, { sourceType: 'module', ecmaVersion: 'latest' }).body
+    .filter(node => node.type === 'VariableDeclaration').flatMap(node => node.declarations.map(item => [item.id.name, item.init])));
+  const english = Object.fromEntries(bindings.get('en').properties.map(property => [property.key.name,
+    property.value.type === 'Identifier' ? bindings.get(property.value.name)?.value : property.value.value]));
+  const message = vm.runInNewContext(declaration(prepared, 'resolveUpdateMissingMessage') + ';resolveUpdateMissingMessage', {
+    i18n: { global: { t(key, values = {}) {
+      assert.equal(typeof english[key], 'string', `Missing bundled English message: ${key}`);
+      return english[key].replace(/\{(\w+)\}/g, (_, name) => values[name]);
+    } } },
+  });
+  assert.equal(message({ kind: 'none', currentVersion: '1.0.4' }), "You're already using the latest version (v1.0.4).");
+  assert.equal(message({ kind: 'disabled' }), 'Update check not initiated.');
+  assert.equal(message({ kind: 'error' }), 'Failed to check for updates.');
   assert.equal(message({ kind: 'error', message: 'Native Mac explanation' }), 'Native Mac explanation');
-  assert.equal(message({ kind: 'available' }), 'No update is ready to install. Check for updates first.');
+  assert.equal(message({ kind: 'available' }), 'No update is ready to install. Please check for updates first.');
 });
 
 test('all prepared modules parse and hardcoded update and login messages are translated', async () => {

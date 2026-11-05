@@ -1,6 +1,6 @@
 {
   "productName": "Wuwa Tappo",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "identifier": "io.github.kyrie25.wuwatappo.global.mac",
   "build": {
     "frontendDist": "../build/frontend-global"
