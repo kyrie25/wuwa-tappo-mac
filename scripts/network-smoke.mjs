@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'acorn';
 import { getRegionProfile } from './regions.mjs';
+import { fetchOfficial } from './sync-upstream.mjs';
 
 const profile = getRegionProfile();
 const contractUrl = new URL(`../tests/network-contract${profile.id === 'global' ? '-global' : ''}.json`, import.meta.url);
@@ -170,17 +171,17 @@ function publicAssetUrl(value) {
 }
 
 async function publicJson(url, origin, checks) {
-  const response = await fetch(url, {
-    headers: { Origin: origin },
-    signal: AbortSignal.timeout(15000),
-    redirect: 'error',
+  return fetchOfficial(url, {
+    stage: 'Public JSON probe', timeout: 15000, request: { headers: { Origin: origin } },
+    read: async response => {
+      assert.equal(response.status, 200, `Public JSON request failed: ${new URL(url).pathname}`);
+      const allowOrigin = response.headers.get('access-control-allow-origin');
+      assert.ok(allowOrigin === origin || allowOrigin === '*', 'Public JSON CORS does not allow the app origin');
+      const body = await response.json();
+      checks.push({ path: new URL(url).pathname, status: response.status, allowOrigin });
+      return { response, body };
+    },
   });
-  assert.equal(response.status, 200, `Public JSON request failed: ${new URL(url).pathname}`);
-  const allowOrigin = response.headers.get('access-control-allow-origin');
-  assert.ok(allowOrigin === origin || allowOrigin === '*', 'Public JSON CORS does not allow the app origin');
-  const body = await response.json();
-  checks.push({ path: new URL(url).pathname, status: response.status, allowOrigin });
-  return { response, body };
 }
 
 export async function probePublicNetwork() {
@@ -196,15 +197,15 @@ export async function probePublicNetwork() {
   assert.equal(config.assets_host, contract.assets.publicHost);
   assert.ok(Number.isFinite(config.server_time));
   const origin = 'tauri://localhost';
-  const preflight = await fetch(`${contract.http.baseUrl}${contract.http.publicConfigPath}`, {
-    method: 'OPTIONS',
-    headers: {
-      Origin: origin,
-      'Access-Control-Request-Method': 'GET',
-      'Access-Control-Request-Headers': contract.http.requestHeaders.join(','),
+  const preflight = await fetchOfficial(`${contract.http.baseUrl}${contract.http.publicConfigPath}`, {
+    stage: 'CORS preflight probe', timeout: 15000, read: response => response, request: {
+      method: 'OPTIONS',
+      headers: {
+        Origin: origin,
+        'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Headers': contract.http.requestHeaders.join(','),
+      },
     },
-    signal: AbortSignal.timeout(15000),
-    redirect: 'error',
   });
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers.get('access-control-allow-origin'), origin);
@@ -231,17 +232,20 @@ export async function probePublicNetwork() {
   assert.ok(update.platforms && typeof update.platforms === 'object');
 
   if (contract.auth.mode === 'embedded_dom_sdk') {
-    const sdk = await fetch(contract.auth.sdk.scriptUrl, { signal: AbortSignal.timeout(15000), redirect: 'error' });
-    assert.equal(sdk.status, 200);
-    const sdkSource = await sdk.text();
+    const sdkSource = await fetchOfficial(contract.auth.sdk.scriptUrl, { stage: 'Public login SDK probe', timeout: 15000, read: async response => {
+      assert.equal(response.status, 200);
+      return response.text();
+    } });
     assert.ok(sdkSource.includes('openLoginView'));
     assert.ok(sdkSource.includes(contract.auth.sdk.environment));
-    checks.push({ path: new URL(contract.auth.sdk.scriptUrl).pathname, service: 'domestic-login-sdk-static-source', status: sdk.status });
+    checks.push({ path: new URL(contract.auth.sdk.scriptUrl).pathname, service: 'domestic-login-sdk-static-source', status: 200 });
   } else {
-    const login = await fetch(contract.auth.browser.loginUrl, { signal: AbortSignal.timeout(15000), redirect: 'error' });
-    assert.equal(login.status, 200);
-    assert.match(login.headers.get('content-type'), /text\/html/);
-    checks.push({ path: new URL(contract.auth.browser.loginUrl).pathname, service: 'global-browser-login-page', status: login.status });
+    await fetchOfficial(contract.auth.browser.loginUrl, { stage: 'Public browser login-page probe', timeout: 15000, read: async response => {
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get('content-type'), /text\/html/);
+      await response.arrayBuffer();
+    } });
+    checks.push({ path: new URL(contract.auth.browser.loginUrl).pathname, service: 'global-browser-login-page', status: 200 });
   }
 
   return {

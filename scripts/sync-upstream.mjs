@@ -72,10 +72,11 @@ function errorDetails(error) {
   return details;
 }
 
-export async function fetchOfficial(url, { fetcher = fetch, read = response => response.json(), stage, timeout = 30_000, sleep = delay } = {}) {
+export async function fetchOfficial(url, { fetcher = fetch, read = response => response.json(), stage, timeout = 30_000, sleep = delay, request = {} } = {}) {
+  if (!['GET', 'HEAD', 'OPTIONS'].includes((request.method || 'GET').toUpperCase())) throw new Error('Automatic retries require a read-only request.');
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const response = await fetcher(url, { redirect: 'error', signal: AbortSignal.timeout(timeout) });
+      const response = await fetcher(url, { ...request, redirect: 'error', signal: AbortSignal.timeout(timeout) });
       if (!response.ok) {
         const error = new Error(`HTTP ${response.status}`);
         error.status = response.status;
@@ -87,6 +88,7 @@ export async function fetchOfficial(url, { fetcher = fetch, read = response => r
       const causes = errorDetails(error);
       const transient = retryableStatuses.has(error.status) || causes.some(cause => retryableCodes.has(cause.code) || cause.name === 'TimeoutError');
       if (transient && attempt < 3) {
+        console.warn(`${stage || 'Official resource request'}: transient failure; retrying (${attempt + 1}/3).`);
         await sleep(250 * 2 ** (attempt - 1));
         continue;
       }

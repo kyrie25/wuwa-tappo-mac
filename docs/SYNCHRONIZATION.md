@@ -61,6 +61,10 @@ Version polling runs on Ubuntu, including exact pending-PR detection and regiona
 
 CI downloads resources from the official installer CDN and stores verified installers in GitHub Actions caches. Uncached builds need a working connection to the official CDN. Resources are never published in a separate release; release assets contain only Mac app packages.
 
+Official configuration, version pointers/manifests and installer downloads use at most three attempts, waiting 250 ms then 500 ms between transient failures. Each attempt receives a fresh deadline: 30 seconds for metadata and five minutes for an installer, including its response body. Timeouts, temporary connection failures and HTTP 408/429/500/502/503/504 can retry. Retry messages appear in the job log. Redirects, certificate errors, other HTTP failures, malformed data and installer integrity failures stop the operation. Interrupted bodies are discarded; only complete size/SHA-256-verified installers enter the cache.
+
+The maintenance public-network probes use the same retry policy with 15-second deadlines, preserving their CORS headers and regional URL checks. Automatic retries accept only GET, HEAD and OPTIONS. They do not repeat account/reward writes or alter the installed app's updater. Regression tests stall real HTTP response bodies and verify recovery for both JSON and installer bytes, bounded exhaustion and rejection of permanent failures.
+
 ## In-app Check for Update
 
 Mac app updates use [Wuwa Tappo’s Releases](https://github.com/kyrie25/wuwa-tappo-mac/releases), separately from official resource synchronization. Check for Updates compares the embedded Mac release revision, then offers signed installation through Update and Restart, with manual CN/Global downloads as a fallback. It does not install official Windows updates. See [Mac update discovery and publishing](MAC_UPDATES.md) for release identity, metadata and validation requirements.

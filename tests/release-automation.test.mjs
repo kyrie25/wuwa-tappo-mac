@@ -61,13 +61,13 @@ test('compatible metadata advances only the selected region and rejects changed 
     try {
       for(const file of files) {await mkdir(path.dirname(path.join(directory,file)),{recursive:true});await copyFile(path.join(root,file),path.join(directory,file));}
       const read=async file=>JSON.parse(await readFile(path.join(directory,file),'utf8'));
-      const lock=await read(profile.upstreamLock);lock.version='1.0.4';await writeFile(path.join(directory,profile.upstreamLock),JSON.stringify(lock));
-      const observed=await read(files[1]);observed.sourceApplication.version='1.0.4';await mkdir(path.join(directory,'.work/upstream-review'),{recursive:true});
+      const lock=await read(profile.upstreamLock);const version=lock.version.split('.').map((value,index)=>Number(value)+(index===2?1:0)).join('.');lock.version=version;await writeFile(path.join(directory,profile.upstreamLock),JSON.stringify(lock));
+      const observed=await read(files[1]);observed.sourceApplication.version=version;await mkdir(path.join(directory,'.work/upstream-review'),{recursive:true});
       const observedFile=path.join(directory,'.work/upstream-review/observed-inventory.json');await writeFile(observedFile,JSON.stringify(observed));
       await prepareCompatibleMetadata(directory,profile);
-      assert.equal((await read(files[1])).sourceApplication.version,'1.0.4');assert.equal((await read(files[3])).version,'1.0.4');
-      assert.equal((await read(files[2])).application,`WuwaTappo-${region} 1.0.4`);assert.equal((await read('package.json')).version,'1.0.4');
-      assert.match(await readFile(path.join(directory,'src-tauri/Cargo.lock'),'utf8'),/name = "wuwatappo-mac"\nversion = "1.0.4"/);
+      assert.equal((await read(files[1])).sourceApplication.version,version);assert.equal((await read(files[3])).version,version);
+      assert.equal((await read(files[2])).application,`WuwaTappo-${region} ${version}`);assert.equal((await read('package.json')).version,version);
+      assert.ok((await readFile(path.join(directory,'src-tauri/Cargo.lock'),'utf8')).includes(`name = "wuwatappo-mac"\nversion = "${version}"`));
       const before=await Promise.all(files.map(file=>readFile(path.join(directory,file),'utf8')));
       observed.commands[0].callSites[0].source+='changed';await writeFile(observedFile,JSON.stringify(observed));
       await assert.rejects(prepareCompatibleMetadata(directory,profile),/inventory changed/);
