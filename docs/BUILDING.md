@@ -2,6 +2,8 @@
 
 This guide is for developers. For installation, login and updates, use the [user guide](USER_GUIDE.md).
 
+GitHub Actions uses macOS 26 ARM64 runners for native tests, app builds and packaging. Sync version checks and release preparation/publication run on Ubuntu; Sync starts Mac jobs only for eligible changed regions. The latest build runner does not raise the app's macOS 13 minimum requirement. Cargo caches are separated by runner OS version.
+
 ## Prerequisites
 
 - An Apple Silicon Mac with macOS and Xcode Command Line Tools.

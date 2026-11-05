@@ -13,18 +13,45 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check:
+    name: Check official versions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+    outputs:
+      changed: ${{ steps.upstream.outputs.changed }}
+      matrix: ${{ steps.upstream.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Check official regional versions
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/check-official.mjs
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: official-version-checks
+          path: .work/upstream-checks
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 30
   sync:
     name: ${{ matrix.region }}
-    runs-on: macos-15
+    needs: check
+    if: always() && !cancelled() && needs.check.outputs.changed == 'true'
+    runs-on: macos-26
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - region: cn
-            label: CN
-          - region: global
-            label: Global
+      matrix: ${{ fromJSON(needs.check.outputs.matrix) }}
     permissions:
       contents: write
       pull-requests: write
@@ -42,23 +69,15 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Check official regional version
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: official-version-checks
+          path: .work/upstream-checks
+      - name: Restore checked official version
         id: upstream
         run: |
-          mkdir -p .work
-          node scripts/sync-upstream.mjs --check > .work/upstream-check.json
-          node --input-type=module <<'NODE'
-          import { readFileSync, appendFileSync } from 'node:fs';
-          import { execFileSync } from 'node:child_process';
-          import { getRegionProfile } from './scripts/regions.mjs';
-          const profile = getRegionProfile();
-          const result = JSON.parse(readFileSync('.work/upstream-check.json', 'utf8'));
-          if (typeof result.changed !== 'boolean' || !/^\d+\.\d+\.\d+$/.test(result.latestVersion)) throw new Error('Invalid official version response');
-          const title = `Sync official ${profile.label} resources ${result.latestVersion}`;
-          const open = JSON.parse(execFileSync('gh', ['pr', 'list', '--state', 'open', '--search', `${title} in:title`, '--limit', '100', '--json', 'title'], { encoding: 'utf8' }));
-          const pending = open.some(pr => pr.title === title);
-          appendFileSync(process.env.GITHUB_OUTPUT, `changed=${result.changed && !pending}\nversion=${result.latestVersion}\nlock=${profile.upstreamLock}\n`);
-          NODE
+          cp ".work/upstream-checks/$WUWA_REGION/upstream-check.json" .work/upstream-check.json
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
       - name: Install build tools
         if: steps.upstream.outputs.changed == 'true'
         run: |
@@ -74,7 +93,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: macos-arm64-${{ matrix.region }}-rust-1.97.1-${{ hashFiles('src-tauri/Cargo.lock') }}
+          key: macos-26-arm64-${{ matrix.region }}-rust-1.97.1-${{ hashFiles('src-tauri/Cargo.lock') }}
       - name: Extract updated official resources
         id: extract
         if: steps.upstream.outputs.changed == 'true'
@@ -178,7 +197,7 @@ jobs:
           retention-days: 30
   release-compatible:
     name: Merge compatible updates and request release
-    needs: sync
+    needs: [check, sync]
     if: always() && !cancelled()
     runs-on: ubuntu-24.04
     permissions:
