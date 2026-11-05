@@ -57,6 +57,8 @@ This automation verifies source contracts and build/package checks. Real-account
 
 Enable GitHub Actions in the repository and allow GitHub Actions to create and approve pull requests in repository Actions settings. To check immediately, open **Actions → Sync official regions → Run workflow**; the daily schedule remains enabled. The sync jobs require repository contents, pull request and issue write permissions. The final merge/release job also requires Actions write permission to dispatch Release. It uses the current `github.repository` for PRs and reports. It does not need a personal account login or game credentials.
 
+Version polling runs on Ubuntu, including exact pending-PR detection and regional failure reports. It schedules macOS 26 ARM64 validation only for changed regions without an existing candidate. A failed regional check is reported without discarding another region's eligible update. No-update runs use Linux only. Native tests, app builds and packaging require macOS; release preparation, publication and final merge/dispatch run on Linux. The deployment target remains macOS 13.
+
 CI downloads resources from the official installer CDN and stores verified installers in GitHub Actions caches. Uncached builds need a working connection to the official CDN. Resources are never published in a separate release; release assets contain only Mac app packages.
 
 ## In-app Check for Update
