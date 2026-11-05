@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import path from 'node:path';
 import test from 'node:test';
 import { assetsOrigin, compareUpstream, configUrl, discoverUpstream, fetchOfficial, officialAssetUrl, parseManifest, parseOptions, syncUpstream, validateLock, verifyInstaller } from '../scripts/sync-upstream.mjs';
@@ -155,6 +157,55 @@ test('an interrupted installer body is retried before handing bytes to integrity
   });
   assert.equal(count, 2);
   assert.deepEqual(verifyInstaller(result, lock()), { size: bytes.length, sha256: lock().installer.sha256 });
+});
+
+test('real response-body timeouts retry with a fresh deadline for JSON and installer bytes', async () => {
+  for (const binary of [false, true]) {
+    let requests = 0;
+    const payload = binary ? bytes : Buffer.from('{"code":0}');
+    const server = createServer((request, response) => {
+      response.writeHead(200, { 'Content-Length': payload.length });
+      if (++requests < 3) response.write(payload.subarray(0, 1));
+      else response.end(payload);
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const sleeps = [];
+    try {
+      const result = await fetchOfficial(`http://127.0.0.1:${server.address().port}/resource`, {
+        timeout: 250, sleep: async milliseconds => sleeps.push(milliseconds),
+        read: binary ? async response => Buffer.from(await response.arrayBuffer()) : response => response.json(),
+      });
+      assert.equal(requests, 3);
+      assert.deepEqual(sleeps, [250, 500]);
+      if (binary) assert.deepEqual(verifyInstaller(result, lock()), { size: bytes.length, sha256: lock().installer.sha256 });
+      else assert.deepEqual(result, { code: 0 });
+    } finally {
+      const closed = once(server, 'close');
+      server.close();
+      server.closeAllConnections();
+      await closed;
+    }
+  }
+});
+
+test('retried probes preserve read-only headers and never repeat a state-changing method', async () => {
+  let requests = 0;
+  for (const method of ['GET', 'HEAD', 'OPTIONS']) {
+    const result = await fetchOfficial(configUrl, {
+      request: { method, headers: { Origin: 'tauri://localhost' } }, sleep: async () => {},
+      fetcher: async (_, options) => {
+        assert.equal(options.method, method);
+        assert.equal(options.headers.Origin, 'tauri://localhost');
+        if (++requests % 2) throw new DOMException('Request timed out', 'TimeoutError');
+        return { ok: true, json: async () => ({ code: 0 }) };
+      },
+    });
+    assert.deepEqual(result, { code: 0 });
+  }
+  for (const method of ['POST', 'PUT', 'DELETE']) await assert.rejects(fetchOfficial(configUrl, {
+    request: { method }, fetcher: async () => assert.fail('state-changing requests must not be sent'),
+  }), /read-only request/);
 });
 
 test('CLI keeps read-only check separate from downloads and extracts', () => {
