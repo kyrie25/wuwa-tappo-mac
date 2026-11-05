@@ -3,8 +3,9 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import vm from 'node:vm';
 import { getRegionProfile } from '../scripts/regions.mjs';
-import { contract, verifyDomesticSdkAssetBinding, verifyGlobalCallbackBridge, verifySourceContract } from '../scripts/network-smoke.mjs';
+import { contract, playerQueryBindings, verifyDomesticSdkAssetBinding, verifyGlobalCallbackBridge, verifySourceContract } from '../scripts/network-smoke.mjs';
 
 const profile = getRegionProfile();
 const root = path.resolve(import.meta.dirname, '..');
@@ -13,6 +14,38 @@ const assets = path.join(root, profile.frontendDir, 'assets');
 const currentCallback = 'async function getCurrent(){return await invoke("plugin:deep-link|get_current")}';
 const officialCallback = 'async function onOpenUrl(e){return await listen("deep-link://new-url",t=>{e(t.payload)})}';
 const privateCallback = 'async function onOpenUrl(e){return await listen("mac-oauth-callback-ready",()=>{getCurrent().then(t=>{if(t?.length)return e(t)}).catch(()=>console.warn("[macOS] OAuth callback could not be read"))})}';
+
+test('actual SDK query forwards credentials and region without dropping the returned account identity', async () => {
+  const main = await readFile(path.join(assets, contract.source.main), 'utf8');
+  const login = await readFile(path.join(assets, contract.source.login), 'utf8');
+  const { query, caller, queryName } = playerQueryBindings(main, login, contract.auth.playerQuery.is_domestic);
+  const declarations = caller.body.body[0].declarations;
+  const unwrap = declarations[1].init.callee.name;
+  const result = caller.body.body[1].argument.expressions;
+  const store = result[0].callee.object.name;
+  const persist = result[1].right.callee.name;
+  const requests = [], stored = [], persisted = [];
+  const response = { cuid: 'synthetic-returned-account', items: [{ playerId: 'synthetic-player' }] };
+  const context = vm.createContext({
+    jsonpClient: { post: async (endpoint, body) => { requests.push({ endpoint, body }); return { data: response }; } },
+    [unwrap]: value => value.data,
+    [store]: { setSdkPlayerQuery: value => stored.push(value) },
+    [persist]: value => persisted.push(value),
+  });
+  vm.runInContext(main.slice(query.start, query.end), context);
+  context[queryName] = context.queryPlayer;
+  vm.runInContext(login.slice(caller.start, caller.end), context);
+  assert.equal(await context[caller.id.name]('synthetic-account', 'synthetic-token', 'synthetic-name'), response);
+  assert.deepEqual(JSON.parse(JSON.stringify(requests)), [{ endpoint: 'api/auth/player/query', body: {
+    cuid: 'synthetic-account', is_domestic: contract.auth.playerQuery.is_domestic,
+    accessToken: 'synthetic-token', cname: 'synthetic-name',
+  } }]);
+  assert.deepEqual(stored, [response]);
+  assert.deepEqual(persisted, [response.cuid]);
+  const tokenArgument = declarations[0].init.argument.arguments[2];
+  const broken = login.slice(0, tokenArgument.start) + 'undefined' + login.slice(tokenArgument.end);
+  assert.throws(() => playerQueryBindings(main === login ? broken : main, broken, contract.auth.playerQuery.is_domestic), /forwarding changed/);
+});
 
 test('domestic SDK loading follows exported bindings rather than minifier aliases', () => {
   const main = 'const useHead=()=>{},isdkSrc="script",isdkCss="style";export{useHead as a,isdkSrc as b,isdkCss as c}';

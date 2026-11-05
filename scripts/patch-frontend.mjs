@@ -35,20 +35,33 @@ export function patchDomesticSdkUrls(source) {
 }
 
 export function patchDomesticLoginReload(source) {
-  const start = 'async function we(e=!1){if(E)return E;if(!e&&$())';
-  const end = 'async function me()';
-  const insertion = ',document.head.appendChild(t),r=window.setTimeout(';
-  const offset = source.indexOf(start);
-  const limit = source.indexOf(end, offset);
-  if (offset < 0 || limit < 0 || source.split(start).length !== 2) {
+  const tree = parse(source, { sourceType: 'module', ecmaVersion: 'latest' });
+  const loaders = tree.body.filter(node => node.type === 'FunctionDeclaration' && node.async
+    && source.slice(node.start, node.end).includes('[login] KrSDK reload failed'));
+  if (loaders.length !== 1 || loaders[0].params.length !== 1
+    || loaders[0].params[0].type !== 'AssignmentPattern') {
     throw new Error('Original CN SDK reload function changed; reconcile the login reload patch before building.');
   }
-  const loader = source.slice(offset, limit);
-  if (!loader.includes('t.dataset.kuroSdkRetry="true"') || loader.split(insertion).length !== 2) {
+  const loader = loaders[0], force = loader.params[0].left.name;
+  const insertions = [];
+  function visit(node) {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'CallExpression' && node.callee.type === 'MemberExpression'
+      && node.callee.object.type === 'MemberExpression' && node.callee.object.object.name === 'document'
+      && node.callee.object.property.name === 'head' && node.callee.property.name === 'appendChild') insertions.push(node);
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) value.forEach(visit);
+      else if (value && typeof value === 'object') visit(value);
+    }
+  }
+  visit(loader.body);
+  const insertion = insertions[0], script = insertion?.arguments[0]?.name;
+  if (insertions.length !== 1 || !force || !script
+    || !source.slice(loader.start, loader.end).includes(`${script}.dataset.kuroSdkRetry="true"`)) {
     throw new Error('Original CN SDK script insertion changed; reconcile the login reload patch before building.');
   }
-  const replacement = ',e&&([...document.scripts].filter(s=>s.src===t.src).forEach(s=>s.remove()),document.getElementById("KrSDK")?.remove())' + insertion;
-  return source.slice(0, offset) + loader.replace(insertion, replacement) + source.slice(limit);
+  const cleanup = `${force}&&([...document.scripts].filter(s=>s.src===${script}.src).forEach(s=>s.remove()),document.getElementById("KrSDK")?.remove()),`;
+  return source.slice(0, insertion.start) + cleanup + source.slice(insertion.start);
 }
 
 export function patchMacUpdateFeedback(source) {
@@ -167,18 +180,53 @@ export function patchMacLayoutBarriers(source) {
 }
 
 export function patchMacChestClock(source) {
-  // WebKit's performance clock excludes Mac sleep. Keep the server offset,
-  // but measure chest deadlines with wall time so they catch up after wake.
-  const anchors = [
-    'function fg(n){return typeof n!="number"||!Number.isFinite(n)||n<=0?!1:(Ys=n,dd=performance.now(),!0)}',
-    'function is(){return Ys===null?Date.now():Ys+(performance.now()-dd)}',
-    'const e=is(),t=performance.now();Nt.value=kr===null?',
-    'function Cp(e){const t=performance.now()+fr;',
-  ];
-  for (const anchor of anchors) {
-    if (source.split(anchor).length !== 2) throw new Error('Original chest clock changed; reconcile sleep-aware countdowns before building.');
-    source = source.replace(anchor, anchor.replace('performance.now()', 'Date.now()'));
+  // WebKit excludes sleep from its performance clock. Match the four chest
+  // clock roles structurally so rebuilt upstream variable names can change.
+  const functions = [];
+  function visit(node, callback) {
+    if (!node || typeof node !== 'object') return;
+    callback(node);
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) value.forEach(child => visit(child, callback));
+      else if (value && typeof value === 'object') visit(value, callback);
+    }
   }
+  const text = node => source.slice(node.start, node.end);
+  const fail = () => { throw new Error('Original chest clock changed; reconcile sleep-aware countdowns before building.'); };
+  visit(parse(source, { sourceType: 'module', ecmaVersion: 'latest' }), node => {
+    if (node.type === 'FunctionDeclaration') functions.push(node);
+  });
+  const one = predicate => {
+    const matches = functions.filter(predicate);
+    if (matches.length !== 1) fail();
+    return matches[0];
+  };
+  const sync = one(node => node.body.body[0]?.type === 'ReturnStatement'
+    && text(node).includes('Number.isFinite(') && text(node).includes('performance.now()'));
+  const assignments = sync.body.body[0].argument.alternate?.expressions;
+  if (assignments?.length !== 3 || assignments[0].type !== 'AssignmentExpression'
+    || assignments[1].type !== 'AssignmentExpression') fail();
+  const stamp = assignments[0].left.name, baseline = assignments[1].left.name;
+  if (!stamp || !baseline) fail();
+  const current = one(node => text(node).includes(`return ${stamp}===null?Date.now():${stamp}+(performance.now()-${baseline})`));
+  const tick = one(node => text(node).includes('userInfo?.left_treasure_chest')
+    && text(node).includes('userInfo?.right_treasure_chest') && text(node).includes('performance.now()'));
+  const restart = one(node => node.body.body[0]?.declarations?.[0]?.init?.type === 'BinaryExpression'
+    && text(node.body.body[0]).includes('performance.now()+') && text(node).includes('==="left"') && text(node).includes('.value='));
+  if (!text(tick).includes(`${current.id.name}()`)) fail();
+  const clocks = [];
+  for (const target of [sync, current, tick, restart]) {
+    const calls = [];
+    visit(target.body, node => {
+      if (node.type === 'CallExpression' && node.arguments.length === 0
+        && node.callee.type === 'MemberExpression' && node.callee.object.name === 'performance'
+        && node.callee.property.name === 'now') calls.push(node);
+    });
+    if (calls.length !== 1) fail();
+    clocks.push(calls[0]);
+  }
+  for (const clock of clocks.sort((a, b) => b.start - a.start)) source = source.slice(0, clock.start) + 'Date.now()' + source.slice(clock.end);
   return source;
 }
+
 import { parse } from 'acorn';

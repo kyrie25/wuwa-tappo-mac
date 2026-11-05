@@ -10,6 +10,31 @@ const contractUrl = new URL(`../tests/network-contract${profile.id === 'global' 
 const root = fileURLToPath(new URL('..', import.meta.url));
 export const contract = JSON.parse(await readFile(contractUrl, 'utf8'));
 
+export function playerQueryBindings(main, login, domestic) {
+  const mainTree = parse(main, { sourceType: 'module', ecmaVersion: 'latest' });
+  const loginTree = parse(login, { sourceType: 'module', ecmaVersion: 'latest' });
+  const query = mainTree.body.find(node => node.type === 'FunctionDeclaration' && node.id.name === 'queryPlayer');
+  assert.ok(query, 'Player query function is missing');
+  let queryName = query.id.name;
+  if (main !== login) {
+    const exported = mainTree.body.flatMap(node => node.specifiers ?? []).find(node => node.local?.name === queryName)?.exported?.name;
+    queryName = loginTree.body.filter(node => node.type === 'ImportDeclaration' && node.source.value === `./${contract.source.main}`)
+      .flatMap(node => node.specifiers).find(node => node.imported?.name === exported)?.local?.name;
+    assert.ok(queryName, 'Login must import the official player query');
+  }
+  const callers = loginTree.body.filter(node => node.type === 'FunctionDeclaration' && node.async && node.params.length === 3
+    && node.body.body[0]?.declarations?.[0]?.init?.type === 'AwaitExpression'
+    && node.body.body[0].declarations[0].init.argument.callee.name === queryName
+    && node.body.body[0].declarations[0].init.argument.arguments[1]?.value === domestic);
+  assert.equal(callers.length, 1, 'Expected one regional SDK player query wrapper');
+  const caller = callers[0], args = caller.body.body[0].declarations[0].init.argument.arguments;
+  assert.equal(args.length, 4, 'SDK query must forward token and username');
+  for (const [index, parameter] of [[0, 0], [2, 1], [3, 2]]) {
+    assert.equal(args[index].name, caller.params[parameter].name, 'SDK query credential forwarding changed');
+  }
+  return { query, caller, queryName };
+}
+
 export function verifyDomesticSdkAssetBinding(main, loginView) {
   const exports = new Map();
   for (const node of parse(main, { sourceType: 'module', ecmaVersion: 'latest' }).body) {
@@ -88,13 +113,14 @@ export async function verifySourceContract(assetDirectory = path.join(root, prof
   for (const value of contract.auth.secureLocalStorageKeys) assert.ok(login.includes(value), `Missing secure login storage marker: ${value}`);
   let sdkUrlsAreExplicitHttps = null;
   let globalOAuthDelivery = null;
+  const { caller: playerCaller } = playerQueryBindings(main, login, contract.auth.playerQuery.is_domestic);
   if (contract.auth.mode === 'embedded_dom_sdk') {
     for (const value of [contract.auth.sdk.initMethod, contract.auth.sdk.openMethod, contract.auth.sdk.successEvent, contract.auth.viewOpenedEvent]) {
       assert.ok(login.includes(value), `Missing domestic login marker: ${value}`);
     }
     assert.ok(!login.includes('plugin:deep-link|'), 'Domestic login unexpectedly requires a native OAuth callback');
-    assert.ok(/\b_e\(e,1\)/.test(login), 'Domestic player query must pass is_domestic=1');
-    assert.ok(/\bse\([^;]+,"sdk",i,a,1\)/.test(login), 'Domestic SDK login must pass source=sdk and is_domestic=1');
+    assert.ok(new RegExp(`await ${playerCaller.id.name.replace(/[$]/g, '\\$&')}\\([$\\w]+,String\\([$.\\w]+\\.token\\?\\?""\\),String\\([$.\\w]+\\.username\\?\\?""\\)\\)`).test(login), 'Domestic login must forward SDK credentials to the regional query');
+    assert.ok(/await [$\w]+\([^;]+,"sdk",[$\w]+,[$\w]+,1\)/.test(login), 'Domestic SDK login must pass source=sdk and is_domestic=1');
     assert.ok(loginView.includes('handleInlandSDKLogin'), 'Login view must bind the domestic SDK callback');
     verifyDomesticSdkAssetBinding(main, loginView);
     const scriptIsHttps = main.includes(`isdkSrc="${contract.auth.sdk.scriptUrl}"`);
@@ -113,10 +139,9 @@ export async function verifySourceContract(assetDirectory = path.join(root, prof
       'plugin:deep-link|get_current',
       'if(!assertPendingStateMatches(n.state))',
       'function assertPendingStateMatches(e){const t=readPendingState();return t?t===e:!1}',
-      'await queryPlayer(e,0)',
       'Login(e.cuid,e.puid,e.channelId,e.userId,e.userName,e.accessToken,"sdk",t,n,0)',
-      'await startOverseasBrowserLogin({lang:t})',
     ]) assert.ok(login.includes(value), `Missing global OAuth contract marker: ${value}`);
+    assert.ok(/await startOverseasBrowserLogin\(\{lang:[$\w]+\}\)/.test(login), 'Global login must forward the selected locale to the browser');
     globalOAuthDelivery = verifyGlobalCallbackBridge(login, { prepared });
     assert.ok(loginView.includes('handleForeignSDKLogin'), 'Global login view must bind the browser OAuth entry point');
   }

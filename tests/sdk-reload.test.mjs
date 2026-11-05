@@ -2,17 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { parse } from 'acorn';
 import { patchDomesticLoginReload } from '../scripts/patch-frontend.mjs';
 import { profile, findSource } from './frontend-context.mjs';
 
 const original = profile.region === 'CN'
-  ? findSource(source => source.includes('async function we(e=!1)')).source
+  ? findSource(source => source.includes('dataset.kuroSdkRetry="true"')).source
   : await readFile(new URL('./fixtures/domestic-sdk-loader.js', import.meta.url), 'utf8');
 const renderer = await readFile(new URL('./fixtures/kuro-sdk-preact.js', import.meta.url), 'utf8');
 const patched = patchDomesticLoginReload(original);
-const loader = patched.slice(patched.indexOf('async function we(e=!1)'), patched.indexOf('async function me()'));
+const loaderNode = parse(patched, { sourceType: 'module', ecmaVersion: 'latest' }).body.find(node => node.type === 'FunctionDeclaration' && patched.slice(node.start, node.end).includes('[login] KrSDK reload failed'));
+const loader = patched.slice(loaderNode.start, loaderNode.end);
 
-function setup({ loaded = true, root = { childNodes: [], firstChild: null } } = {}) {
+function setup({ loaded = true, root = { childNodes: [], firstChild: null }, loaderSource = loader, loaderName = 'ge' } = {}) {
   const actions = [];
   let currentRoot = root;
   const outer = { id: 'app', intact: true };
@@ -29,12 +31,12 @@ function setup({ loaded = true, root = { childNodes: [], firstChild: null } } = 
   const context = vm.createContext({
     document, console,
     window: { setTimeout() { return 1; }, clearTimeout() {} },
-    E: null, S: null, b: null, R: null, x: 0, u: 'ready', te: null, W: 0, We: 8000,
-    $: () => loaded, re: () => actions.push('existing-sdk-initialized'),
-    tn: () => oldScript.src, l() {}, c() {},
+    y: null, f: null, D: null, U: 0, c: 'ready', Q: null, q: 0, Be: 8000,
+    b: () => loaded, W: () => actions.push('existing-sdk-initialized'),
+    Ze: () => oldScript.src, l() {}, a() {},
   });
-  vm.runInContext(loader, context);
-  return { actions, outer, appended, document, context, reload: force => context.we(force) };
+  vm.runInContext(loaderSource, context);
+  return { actions, outer, appended, document, context, reload: force => context[loaderName](force) };
 }
 
 test('only forced reload removes the exact old SDK script and SDK root before insertion', async () => {
@@ -98,6 +100,17 @@ test('the actual bundled Preact skips a new SDK App on a stale root but renders 
   const reloaded = runtime();
   reloaded.render(reloaded.h(() => { cleanRenders += 1; return null; }, {}), freshRoot);
   assert.equal(cleanRenders, 1);
+  env.appended[0].onload();
+  assert.equal(await pending, true);
+});
+
+test('SDK loader patch survives renamed function, force flag and script variable', async () => {
+  const tree = parse(original, { sourceType: 'module', ecmaVersion: 'latest' });
+  const node = tree.body.find(item => item.type === 'FunctionDeclaration' && original.slice(item.start, item.end).includes('[login] KrSDK reload failed'));
+  const changed = original.slice(node.start, node.end).replace(/\bge\b/g, 'reloadSdk').replace(/\be\b/g, 'forceRefresh').replace(/\bt\b/g, 'scriptElement');
+  const env = setup({ loaderSource: patchDomesticLoginReload(changed), loaderName: 'reloadSdk' });
+  const pending = env.reload(true);
+  assert.deepEqual(env.actions, ['old-sdk-script-removed', 'sdk-root-removed', 'new-script-appended']);
   env.appended[0].onload();
   assert.equal(await pending, true);
 });

@@ -23,6 +23,14 @@ The native Game Mode menu follows the frontend's current state. The existing des
 
 Frontend preparation now handles the 1.0.3 Settings translator alias and CN's single remaining invoke wrapper. The accepted native and network contract snapshots describe the reviewed, unmodified 1.0.3 bundles; English and Mac adaptations are applied afterward. Login reload, protected Global callbacks, updater feedback and occluded-window layout safeguards remain covered by tests.
 
+## Official 1.0.4 compatibility
+
+Both regional locks and accepted inventories now describe verified official **1.0.4** installers. Review found no added, removed or changed native commands/events and no runtime-constant changes. Generated module names and call-site evidence changed, so the strict inventory gate correctly required review rather than accepting the update automatically.
+
+The HTTP player query now sends `cuid`, `is_domestic`, `accessToken` and `cname`. Both regional network contracts and tests cover the actual bundled query and SDK wrapper with synthetic credentials, including region selection and returned account persistence. CN retains its embedded SDK and Global retains its state-bound browser callback flow.
+
+The sleep-aware chest clock and CN forced SDK reload patches now locate bounded function roles and script insertion structurally instead of relying on generated function/variable names. Regression tests rename those symbols and execute the patched behavior. Missing or ambiguous targets still stop preparation. This reduces failures from rebuilt bundles; it does not automatically approve changed upstream behavior or relax the inventory review gate. Other patches keep their existing guards.
+
 For the next official version:
 
 1. Run `npm run upstream:update` separately for `WUWA_REGION=cn` and `WUWA_REGION=global` on a connection that can reach the official hosts.
