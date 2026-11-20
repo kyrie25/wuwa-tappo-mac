@@ -93,12 +93,19 @@ pub enum SessionMutation {
     SetCookie { cookie: SessionCookie },
     SetStorage { key: String, value: Option<String> },
     ClearStorage,
+    #[serde(skip)]
+    ResetApp,
 }
 
 #[derive(Clone)]
 pub struct SessionStore {
     backend: SessionBackend,
-    inner: Arc<Mutex<SessionSnapshot>>,
+    inner: Arc<Mutex<SessionState>>,
+}
+
+struct SessionState {
+    snapshot: SessionSnapshot,
+    resetting: bool,
 }
 
 #[derive(Clone)]
@@ -167,6 +174,10 @@ fn apply_mutation(
             }
         }
         SessionMutation::ClearStorage => snapshot.storage.clear(),
+        SessionMutation::ResetApp => {
+            snapshot.cookies.clear();
+            snapshot.storage.clear();
+        }
     }
     snapshot.revision += 1;
     Ok(())
@@ -217,9 +228,12 @@ impl SessionStore {
     pub fn ephemeral() -> Self {
         Self {
             backend: SessionBackend::Memory,
-            inner: Arc::new(Mutex::new(SessionSnapshot {
-                persistence: SessionPersistence::Memory,
-                ..SessionSnapshot::default()
+            inner: Arc::new(Mutex::new(SessionState {
+                snapshot: SessionSnapshot {
+                    persistence: SessionPersistence::Memory,
+                    ..SessionSnapshot::default()
+                },
+                resetting: false,
             })),
         }
     }
@@ -263,7 +277,10 @@ impl SessionStore {
             backend: SessionBackend::Keychain {
                 service: Arc::from(service),
             },
-            inner: Arc::new(Mutex::new(snapshot)),
+            inner: Arc::new(Mutex::new(SessionState {
+                snapshot,
+                resetting: false,
+            })),
         })
     }
 
@@ -272,6 +289,7 @@ impl SessionStore {
             .inner
             .lock()
             .map_err(|_| "App sign-in session lock failed".to_owned())?
+            .snapshot
             .clone();
         remove_expired(&mut snapshot, now_millis());
         Ok(snapshot)
@@ -289,26 +307,37 @@ impl SessionStore {
             .inner
             .lock()
             .map_err(|_| "App sign-in session lock failed".to_owned())?;
-        transaction(
-            &mut current,
-            mutation,
-            now_millis(),
-            |snapshot| match &self.backend {
-                SessionBackend::Memory => Ok(()),
-                SessionBackend::Keychain { service } => persist_snapshot(
-                    snapshot,
-                    |bytes| {
-                        set_generic_password(service, ACCOUNT, bytes).map_err(|error| {
-                            format!(
-                                "Cannot save app sign-in data in Keychain (OSStatus {})",
-                                error.code()
-                            )
-                        })
-                    },
-                    || deletion_result(delete_generic_password(service, ACCOUNT)),
-                ),
-            },
-        )
+        if current.resetting {
+            return Err("App sign-in data is being reset".to_owned());
+        }
+        let resetting = matches!(mutation, SessionMutation::ResetApp);
+        let snapshot =
+            transaction(
+                &mut current.snapshot,
+                mutation,
+                now_millis(),
+                |snapshot| match &self.backend {
+                    SessionBackend::Memory => Ok(()),
+                    SessionBackend::Keychain { service } => persist_snapshot(
+                        snapshot,
+                        |bytes| {
+                            set_generic_password(service, ACCOUNT, bytes).map_err(|error| {
+                                format!(
+                                    "Cannot save app sign-in data in Keychain (OSStatus {})",
+                                    error.code()
+                                )
+                            })
+                        },
+                        || deletion_result(delete_generic_password(service, ACCOUNT)),
+                    ),
+                },
+            )?;
+        current.resetting = resetting;
+        Ok(snapshot)
+    }
+
+    pub fn clear_for_reset(&self) -> Result<(), String> {
+        self.apply(SessionMutation::ResetApp).map(|_| ())
     }
 }
 
@@ -323,7 +352,7 @@ fn trusted_window(window: &WebviewWindow) -> bool {
     })
 }
 
-fn require_app_window(window: &WebviewWindow) -> Result<(), String> {
+pub(crate) fn require_app_window(window: &WebviewWindow) -> Result<(), String> {
     if trusted_window(window) {
         Ok(())
     } else {
@@ -768,6 +797,27 @@ mod tests {
         assert!(restart.storage.is_empty());
         assert_eq!(restart.revision, 0);
         assert_eq!(restart.persistence, SessionPersistence::Memory);
+    }
+
+    #[test]
+    fn native_app_reset_clears_local_sign_in_and_rejects_late_window_writes() {
+        let store = SessionStore::ephemeral();
+        let cookie = SessionMutation::SetCookie {
+            cookie: cookie(Some(now_millis() + 60000)),
+        };
+        store.apply(cookie.clone()).unwrap();
+        store
+            .apply(SessionMutation::SetStorage {
+                key: SECURE_STORAGE_KEYS[0].into(),
+                value: Some("synthetic-token".into()),
+            })
+            .unwrap();
+        store.clear_for_reset().unwrap();
+        let snapshot = store.snapshot().unwrap();
+        assert!(snapshot.cookies.is_empty());
+        assert!(snapshot.storage.is_empty());
+        assert!(store.clone().apply(cookie).is_err());
+        assert!(serde_json::from_str::<SessionMutation>(r#"{"kind":"reset_app"}"#).is_err());
     }
 
     #[test]

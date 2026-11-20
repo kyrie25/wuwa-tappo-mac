@@ -14,13 +14,13 @@ const fixture = `${originalBridge}async function bindOverseasAuthDeepLink(e){if(
 
 test('login regression fixtures preserve the selected official loader or state filter', async () => {
   const domestic = profile.region === 'CN';
-  const name = domestic ? 'ge' : 'handleRawUrls';
-  const source = findSource(value => value.includes(`async function ${name}(`)).source;
+  const anchor = domestic ? '[login] KrSDK reload failed' : 'async function handleRawUrls(';
+  const source = findSource(value => value.includes(anchor)).source;
   const fixture = await readFile(new URL(domestic ? './fixtures/domestic-sdk-loader.js' : './fixtures/global-oauth-handler.js', import.meta.url), 'utf8');
   function declaration(value) {
     const node = parse(value, { sourceType: 'module', ecmaVersion: 'latest' }).body
-      .find(item => item.type === 'FunctionDeclaration' && item.id.name === name);
-    assert.ok(node, `Official ${name} declaration must remain available`);
+      .find(item => item.type === 'FunctionDeclaration' && value.slice(item.start, item.end).includes(anchor));
+    assert.ok(node, `Official declaration for ${anchor} must remain available`);
     return value.slice(node.start, node.end);
   }
   assert.equal(declaration(source), declaration(fixture));

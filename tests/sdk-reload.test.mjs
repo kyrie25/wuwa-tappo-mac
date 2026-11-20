@@ -14,7 +14,7 @@ const patched = patchDomesticLoginReload(original);
 const loaderNode = parse(patched, { sourceType: 'module', ecmaVersion: 'latest' }).body.find(node => node.type === 'FunctionDeclaration' && patched.slice(node.start, node.end).includes('[login] KrSDK reload failed'));
 const loader = patched.slice(loaderNode.start, loaderNode.end);
 
-function setup({ loaded = true, root = { childNodes: [], firstChild: null }, loaderSource = loader, loaderName = 'ge' } = {}) {
+function setup({ loaded = true, root = { childNodes: [], firstChild: null }, loaderSource = loader, loaderName = loaderNode.id.name } = {}) {
   const actions = [];
   let currentRoot = root;
   const outer = { id: 'app', intact: true };
@@ -29,11 +29,11 @@ function setup({ loaded = true, root = { childNodes: [], firstChild: null }, loa
     head: { appendChild(element) { actions.push('new-script-appended'); appended.push(element); } },
   };
   const context = vm.createContext({
-    document, console,
+    document, console, performance,
     window: { setTimeout() { return 1; }, clearTimeout() {} },
-    y: null, f: null, D: null, U: 0, c: 'ready', Q: null, q: 0, Be: 8000,
-    b: () => loaded, W: () => actions.push('existing-sdk-initialized'),
-    Ze: () => oldScript.src, l() {}, a() {},
+    y: null, _: null, D: null, K: 0, s: 'ready', W: null, q: 0, oe: 8000,
+    E: () => loaded, Q: () => actions.push('existing-sdk-initialized'),
+    Ze: () => oldScript.src, l() {}, o() {},
   });
   vm.runInContext(loaderSource, context);
   return { actions, outer, appended, document, context, reload: force => context[loaderName](force) };
@@ -74,7 +74,7 @@ test('the existing in-flight guard avoids a second cleanup or script insertion',
 test('unknown upstream loader shapes fail instead of applying a broad DOM patch', () => {
   assert.throws(() => patchDomesticLoginReload(''), /reload function changed/);
   assert.throws(() => patchDomesticLoginReload(original.replace('t.dataset.kuroSdkRetry="true"', 't.dataset.changed="true"')), /script insertion changed/);
-  assert.throws(() => patchDomesticLoginReload(original.replace(',document.head.appendChild(t),r=window.setTimeout(', ',document.head.append(t),r=window.setTimeout(')), /script insertion changed/);
+  assert.throws(() => patchDomesticLoginReload(original.replace('document.head.appendChild(t)', 'document.head.append(t)')), /script insertion changed/);
   assert.equal(patched.replace(',e&&([...document.scripts].filter(s=>s.src===t.src).forEach(s=>s.remove()),document.getElementById("KrSDK")?.remove())', ''), original);
 });
 
@@ -107,7 +107,7 @@ test('the actual bundled Preact skips a new SDK App on a stale root but renders 
 test('SDK loader patch survives renamed function, force flag and script variable', async () => {
   const tree = parse(original, { sourceType: 'module', ecmaVersion: 'latest' });
   const node = tree.body.find(item => item.type === 'FunctionDeclaration' && original.slice(item.start, item.end).includes('[login] KrSDK reload failed'));
-  const changed = original.slice(node.start, node.end).replace(/\bge\b/g, 'reloadSdk').replace(/\be\b/g, 'forceRefresh').replace(/\bt\b/g, 'scriptElement');
+  const changed = original.slice(node.start, node.end).replace(node.id.name, 'reloadSdk').replace(/\be\b/g, 'forceRefresh').replace(/\bt\b/g, 'scriptElement');
   const env = setup({ loaderSource: patchDomesticLoginReload(changed), loaderName: 'reloadSdk' });
   const pending = env.reload(true);
   assert.deepEqual(env.actions, ['old-sdk-script-removed', 'sdk-root-removed', 'new-script-appended']);

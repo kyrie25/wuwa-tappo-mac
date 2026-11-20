@@ -8,7 +8,7 @@ Wuwa Tappo is a native Rust/Tauri app using the official regional frontend and a
 
 `scripts/inventory-contract.mjs` and `tests/contracts*.json` describe the unmodified regional frontend's native commands/events. A version change requires reviewing contract differences and reconciling native behavior before accepting new snapshots. Preparation fails explicitly when a required patch no longer matches. Compatible sync changes use reviewed PRs; incompatible changes remain drafts. Installer caches are size/SHA-256 verified and are never released as public assets. See [synchronization](SYNCHRONIZATION.md).
 
-Official 1.0.4 is accepted for both regions after reviewing regenerated module/call-site evidence against the unchanged native command/event contracts and runtime constants. Regional resource, network and application metadata advance together. Future bundle rebuilds still pass through the full inventory and behavior checks.
+Official 1.0.5 is accepted for both regions. The reviewed inventories cover reset and counter restoration, diagnostics, expanded shortcuts, toast dismissal, and display and pointer events. Regional resource, network and application metadata advance together. Future bundle rebuilds still pass through the full inventory and behavior checks. See [the 1.0.5 compatibility review](SYNCHRONIZATION.md#official-105-compatibility).
 
 ## English interface and app identity
 
@@ -32,6 +32,8 @@ Repository, issue and Mac distribution links refer to this project. Original lic
 
 `shortcuts.rs` uses native global shortcut registration independently of global input monitoring. It maps Windows key/modifier data to Mac equivalents, persists regional settings, pauses shortcuts during capture, rejects duplicates and restores registrations after capture/save failures. `scripts/mac-platform.js` supplies Mac platform behavior and modifier labels. F7/F8/F9 can require Fn depending on system keyboard settings.
 
+Official 1.0.5 adds shortcut actions for Always on Top, automatic Game Mode in fullscreen, and disabling pointer monitoring. The existing shortcut file loads with its saved bindings and the new actions disabled. The native bridge dispatches each action to the official frontend. The input bridge clears stale hover when an app window covers the pet and preserves the existing gesture owner and click counting. When display switching needs a retry, the window bridge uses the requested monitor bounds and that monitor’s scale. The native toast overlay hides itself after the frontend dismisses it. Tests verify shortcut migration and dispatch, input routing, and the reviewed event contracts. Physical shortcut presses and mixed-DPI display switching still require hardware testing.
+
 `gamepad.rs` uses Apple's GameController API for the official controller counting/clap path. This requires physical-controller acceptance; keyboard/mouse tests do not establish controller correctness.
 
 ## Login, session storage and counters
@@ -43,6 +45,14 @@ In 1.0.4, the official SDK player-query wrappers forward the access token and us
 CN forced SDK reload removes the matching old SDK scripts and stale `#KrSDK` root before inserting the replacement; ordinary reuse and first loading preserve the DOM. The patch identifies the async reload function, its force parameter and tagged script insertion without assuming generated names. It requires one matching loader/insertion and stops on an unknown shape. Tests cover renamed symbols, in-flight reuse and the SDK renderer's stale-root behavior.
 
 `storage.rs` stores validated numeric counters separately by environment/account, with bounded values and atomic writes. `socket.rs` and `scripts/mac-websocket.js` provide native regional WebSocket connections. Official account, reward and multiplayer rules remain authoritative; local success is not a substitute for real-account testing.
+
+### Reset App
+
+The 1.0.5 reset command archives local account totals and retains pending clicks before making changes to app data. On the next sign-in the frontend reconciles the archive with the official server total. The Mac implementation clears the current region’s remembered sign-in and shortcuts, waits for its WebKit data store to clear, then requests a restart. The macOS launch-at-login registration is shared by the two editions and stays in place. Native regression tests verify archive isolation, write blocking during reset and clearing the session. Synthetic login tests verify that a restored total counts pending clicks once. A reset followed by real-account sign-in still requires hands-on verification.
+
+### Network diagnostics
+
+The native diagnostics command performs bounded requests to the selected region’s public activity configuration and update pointer, then returns the pointer to the frontend for its WebKit probe. Native logs record only the target, HTTP status, elapsed time and outcome. The native allowlist test covers both regions and rejects caller-supplied hosts outside the selected region. The network contracts also cover the two public-room actions added in 1.0.5. Joining a room with a real account still requires hands-on verification.
 
 ## Gallery images while signed out
 

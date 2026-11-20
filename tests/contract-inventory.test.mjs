@@ -11,10 +11,10 @@ import { contract, profile, root, assetDirectory } from './frontend-context.mjs'
 const runtimeCommands = contract.commands.filter(item => item.kind === 'application' && item.scopes.includes('application-runtime'));
 
 test('selected region runtime and Windows installer have separate exhaustive inventories', () => {
-  assert.equal(runtimeCommands.length, 53);
+  assert.equal(runtimeCommands.length, 57);
   assert.equal(contract.commands.filter(item => item.kind === 'application' && item.scopes.includes('windows-installer')).length, profile.id === 'cn' ? 9 : 11);
   assert.equal(contract.commands.filter(item => item.kind === 'plugin').length, profile.id === 'cn' ? 116 : 120);
-  assert.equal(contract.events.length, profile.id === 'cn' ? 63 : 64);
+  assert.equal(contract.events.length, profile.id === 'cn' ? 68 : 69);
   assert.equal(contract.sourceApplication.region, profile.region);
   assert.equal(contract.sourceApplication.version, JSON.parse(fs.readFileSync(path.join(root, profile.upstreamLock), 'utf8')).version);
   assert.equal(Object.hasOwn(contract.runtimeConstants, 'authCallbackScheme'), profile.id === 'global');
@@ -63,8 +63,12 @@ test('keyboard and mouse payloads cannot accidentally share a count stream', () 
   assert.deepEqual(find('mouse-button').payload.properties.button.enum, ['left', 'right', 'middle']);
   assert.deepEqual(find('mouse-button').payload.properties.action.enum, ['press', 'release']);
   assert.equal(find('mouse-button').payload.properties.memberId.type, 'number');
+  assert.deepEqual(find('mouse-button').payload.properties.countedGlobally, { type: 'boolean', optional: true });
   assert.match(find('mouse-button').notes, /Do not also emit key-press/);
   assert.ok(find('mouse-button').callSites[0].payloadReads.includes('memberId'));
+  assert.ok(find('mouse-button').callSites[0].payloadReads.includes('countedGlobally'));
+  assert.deepEqual(find('mouse-leave').payload, { type: 'undefined' });
+  assert.deepEqual(find('native-input-sync-failed').payload, { type: 'undefined' });
 });
 
 test('official gamepad consumer counts once, keeps feedback and respects both input guards', () => {
@@ -105,15 +109,24 @@ test('storage retains account/environment identity and intentional zero counts',
   assert.equal(find('save_key_press_count').request.properties.count.minimum, 0);
   assert.deepEqual(Object.keys(find('load_cumulative_click_count').response.properties).sort(), ['count', 'cuid', 'environment']);
   assert.equal(find('save_cumulative_click_count').request.properties.environment.value, contract.runtimeConstants.clickCacheEnvironment);
+  assert.deepEqual(find('load_reset_click_archive').response, find('load_key_press_count').response);
+  assert.equal(find('reset_local_data').request.properties.environment.value, contract.runtimeConstants.clickCacheEnvironment);
 });
 
 test('settings and monitor events preserve their object payload envelopes', () => {
   const find = name => contract.events.find(item => item.name === name).payload;
   assert.equal(find('cat-settings-passthrough').properties.enabled.type, 'boolean');
+  for (const name of ['always-on-top', 'auto-game-mode', 'pointer-monitoring']) {
+    assert.equal(find(`cat-settings-${name}`).properties.enabled.type, 'boolean');
+  }
   assert.equal(find('cat-settings-pet-scale-drag').properties.active.type, 'boolean');
   assert.equal(find('cat-settings-opacity').properties.opacityPercent.type, 'number');
   assert.equal(find('cat-settings-pet-scale').properties.petScale.type, 'number');
   assert.equal(find('cat-main-monitor-switch-layout-request').properties.targetWidth.type, 'number');
+  assert.equal(find('cat-main-monitor-switch-finished').properties.requestId.type, 'string');
+  const fullscreenShell = runtimeCommands.find(command => command.name === 'set_main_window_fullscreen_shell');
+  assert.equal(fullscreenShell.request.properties.payload.optional, true);
+  assert.ok(fullscreenShell.callSites.some(site => site.arguments.properties?.payload?.properties.width));
   assert.equal(contract.bootContract.routes.toast, '/toast');
 });
 
