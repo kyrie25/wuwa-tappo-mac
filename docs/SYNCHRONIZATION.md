@@ -41,6 +41,12 @@ For the next official version:
 
 The sync workflow retains contract differences and validation logs and opens a draft PR when extraction succeeds but compatibility fails. Extraction alone does not establish native compatibility.
 
+## Official 1.0.5 compatibility
+
+Both official 1.0.5 installers were retrieved, pinned by SHA-256 and size, and extracted. The CN sync run timed out requesting the version pointer. An alternate edge advertised for the same official hostname served the installer with normal TLS validation. Global extraction succeeded in Sync and the inventory gate identified the contracts needing review.
+
+Both regions add native commands for Reset App, counter archive retrieval, network diagnostics and hiding the toast overlay. Six shortcut actions are now available, and the old three-action settings load with the additional actions disabled. The native window bridge honors explicit target monitor bounds during display-switch recovery. Network fixtures cover the new random public-room join and room-visibility requests. The previously accepted login, countdown, Gallery and updater behavior is checked against both regenerated bundles. See [the macOS adaptation record](MAC_PORT.md) for implementation and validation limits.
+
 ## Automatic compatible updates
 
 After extraction, Sync compares the full observed frontend inventory with its accepted regional fixture. Only the version field may differ. Changed commands, events, call sites, runtime constants or other inventory data require review; automation does not accept those changes. Official version rollbacks also require review.

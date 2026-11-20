@@ -33,6 +33,7 @@ pub const COMMANDS: &[&str] = &[
     "get_maintenance_notice_payload",
     "has_maintenance_notice",
     "hide_main_after_maintenance_notice_ready",
+    "hide_toast_overlay",
     "is_force_update_locked",
     "open_about_window",
     "open_login_window",
@@ -299,6 +300,36 @@ fn fullscreen_shell(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn fit_shell_to_target(window: &WebviewWindow, bounds: &Value) -> Result<(), String> {
+    let x = number(bounds, "x")?;
+    let y = number(bounds, "y")?;
+    let width = number(bounds, "width")?;
+    let height = number(bounds, "height")?;
+    if width <= 0. || height <= 0. {
+        return Err("Monitor dimensions must be positive".into());
+    }
+    let target = window
+        .available_monitors()
+        .map_err(err)?
+        .into_iter()
+        .find(|monitor| {
+            f64::from(monitor.position().x) == x
+                && f64::from(monitor.position().y) == y
+                && f64::from(monitor.size().width) == width
+                && f64::from(monitor.size().height) == height
+        })
+        .ok_or("Selected display is no longer available")?;
+    // Tao converts physical window positions using the current screen's scale.
+    // The indicated target can have a different scale while the move is pending.
+    let scale = target.scale_factor();
+    window
+        .set_position(LogicalPosition::new(x / scale, y / scale))
+        .map_err(err)?;
+    window
+        .set_size(LogicalSize::new(width / scale, height / scale))
+        .map_err(err)
+}
+
 fn safe_area(app: &AppHandle) -> Result<Value, String> {
     let w = main_window(app)?;
     let m = w
@@ -551,35 +582,21 @@ pub fn dispatch(
                     .map_err(err)?;
             }
         }
-        "set_main_window_fullscreen_shell" => fullscreen_shell(app)?,
-        "set_main_window_monitor_bounds" => {
-            let p = payload(args);
-            let x = number(p, "x")?;
-            let y = number(p, "y")?;
-            let width = number(p, "width")?;
-            let height = number(p, "height")?;
-            if width <= 0. || height <= 0. {
-                return Err("Monitor dimensions must be positive".into());
+        "set_main_window_fullscreen_shell" => {
+            if let Some(bounds) = args.get("payload") {
+                fit_shell_to_target(&main_window(app)?, bounds)?;
+            } else {
+                fullscreen_shell(app)?;
             }
+        }
+        "set_main_window_monitor_bounds" => {
             let w = main_window(app)?;
-            state.hit.write().map_err(err)?.force_ignore = true;
             w.set_ignore_cursor_events(true).map_err(err)?;
-            let target = w
-                .available_monitors()
-                .map_err(err)?
-                .into_iter()
-                .find(|m| {
-                    m.position().x == x as i32
-                        && m.position().y == y as i32
-                        && m.size().width == width as u32
-                        && m.size().height == height as u32
-                })
-                .ok_or("Selected display is no longer available")?;
-            let scale = target.scale_factor();
-            w.set_position(LogicalPosition::new(x / scale, y / scale))
-                .map_err(err)?;
-            w.set_size(LogicalSize::new(width / scale, height / scale))
-                .map_err(err)?;
+            state.hit.write().map_err(err)?.force_ignore = true;
+            if let Err(error) = fit_shell_to_target(&w, payload(args)) {
+                state.hit.write().map_err(err)?.force_ignore = false;
+                return Err(error);
+            }
         }
         "finish_main_window_monitor_switch" => {
             state.hit.write().map_err(err)?.force_ignore = false;
@@ -653,6 +670,14 @@ pub fn dispatch(
             center_on_main(app, &w)?;
             w.set_ignore_cursor_events(true).map_err(err)?;
             w.show().map_err(err)?;
+        }
+        "hide_toast_overlay" => {
+            if label != "toast" {
+                return Err("Only the toast overlay can hide itself".into());
+            }
+            if let Some(window) = app.get_webview_window("toast") {
+                window.hide().map_err(err)?;
+            }
         }
         "sync_native_menu" => return crate::menu::sync(app, args),
         "popup_main_dock_context_menu" => {

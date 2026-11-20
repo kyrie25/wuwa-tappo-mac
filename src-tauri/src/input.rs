@@ -385,6 +385,7 @@ fn dispatch_mouse(
 ) -> Result<(), String> {
     match route_event(input, routing, state)? {
         Some(RoutedInput::Move(position)) => app.emit("mouse-move", position),
+        Some(RoutedInput::Leave) => app.emit_to("main", "mouse-leave", ()),
         Some(RoutedInput::Button { position, button }) => app
             .emit("mouse-move", position)
             .and_then(|_| app.emit("mouse-button", button)),
@@ -454,6 +455,7 @@ enum MouseTarget {
 #[derive(Default)]
 struct MouseRouting {
     pressed: BTreeMap<&'static str, MouseTarget>,
+    pointing_at_main: bool,
 }
 
 impl MouseRouting {
@@ -485,6 +487,7 @@ impl MouseRouting {
 #[derive(Debug)]
 enum RoutedInput {
     Move(MousePosition),
+    Leave,
     Button {
         position: MousePosition,
         button: MouseButton,
@@ -501,8 +504,11 @@ fn route_event(
             let point = physical_mouse_point(point, state);
             let over_auxiliary = over_auxiliary_window(point, state)?;
             if !routing.movement(over_auxiliary) {
-                return Ok(None);
+                return Ok(
+                    std::mem::take(&mut routing.pointing_at_main).then_some(RoutedInput::Leave)
+                );
             }
+            routing.pointing_at_main = true;
             Ok(Some(RoutedInput::Move(resolve_mouse_position(
                 point, state,
             )?)))
@@ -524,6 +530,7 @@ fn route_event(
             if !routing.button(button, pressed, over_auxiliary) {
                 return Ok(None);
             }
+            routing.pointing_at_main = true;
             let position = resolve_mouse_position(point, state)?;
             Ok(Some(RoutedInput::Button {
                 position,
@@ -725,6 +732,15 @@ mod tests {
             })
         ));
         assert!(routing.pressed.is_empty());
+        assert!(matches!(
+            route_event(
+                NativeInput::Move(Point { x: 150.0, y: 50.0 }),
+                &mut routing,
+                &state
+            )
+            .unwrap(),
+            Some(RoutedInput::Leave)
+        ));
         assert!(route_event(
             NativeInput::Move(Point { x: 150.0, y: 50.0 }),
             &mut routing,

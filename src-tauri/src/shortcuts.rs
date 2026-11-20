@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, fs, path::PathBuf, sync::Mutex};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Binding {
     modifiers: u32,
@@ -16,6 +16,12 @@ pub struct Config {
     game_mode: Binding,
     switch_screen: Binding,
     toggle_pet: Binding,
+    #[serde(default)]
+    always_on_top: Binding,
+    #[serde(default)]
+    auto_game_mode_on_fullscreen: Binding,
+    #[serde(default)]
+    disable_pointer_monitoring: Binding,
 }
 
 impl Default for Config {
@@ -33,16 +39,25 @@ impl Default for Config {
                 modifiers: 0,
                 key: 120,
             },
+            always_on_top: Binding::default(),
+            auto_game_mode_on_fullscreen: Binding::default(),
+            disable_pointer_monitoring: Binding::default(),
         }
     }
 }
 
 impl Config {
-    fn entries(&self) -> [(&'static str, Binding); 3] {
+    fn entries(&self) -> [(&'static str, Binding); 6] {
         [
             ("gameMode", self.game_mode),
             ("switchScreen", self.switch_screen),
             ("togglePet", self.toggle_pet),
+            ("alwaysOnTop", self.always_on_top),
+            (
+                "autoGameModeOnFullscreen",
+                self.auto_game_mode_on_fullscreen,
+            ),
+            ("disablePointerMonitoring", self.disable_pointer_monitoring),
         ]
     }
 
@@ -119,6 +134,7 @@ impl Binding {
 struct State {
     config: Config,
     capturing: BTreeSet<String>,
+    resetting: bool,
 }
 
 pub struct Shortcuts {
@@ -173,6 +189,7 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
         state: Mutex::new(State {
             config,
             capturing: BTreeSet::new(),
+            resetting: false,
         }),
     });
     Ok(())
@@ -196,6 +213,9 @@ pub fn set_app_shortcuts(
 ) -> Result<(), String> {
     config.validate()?;
     let mut current = state.state.lock().map_err(|_| "shortcut lock failed")?;
+    if current.resetting {
+        return Err("Local data reset is in progress".into());
+    }
     if current.capturing.is_empty() {
         if let Err(error) = register(&app, &config) {
             if let Err(restore) = register(&app, &current.config) {
@@ -221,6 +241,18 @@ pub fn set_app_shortcuts(
     current.config = config.clone();
     app.emit("app-shortcuts-changed", config)
         .map_err(|e| e.to_string())
+}
+
+pub fn clear_saved_for_reset(app: &AppHandle) -> Result<(), String> {
+    let shortcuts = app.state::<Shortcuts>();
+    let mut state = shortcuts.state.lock().map_err(|_| "shortcut lock failed")?;
+    match fs::remove_file(&shortcuts.path) {
+        Ok(()) => (),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) => return Err(format!("Could not clear shortcuts: {error}")),
+    }
+    state.resetting = true;
+    Ok(())
 }
 
 pub fn capture(app: &AppHandle, owner: &str, active: bool) -> Result<(), String> {
@@ -255,7 +287,7 @@ mod tests {
     use tauri_plugin_global_shortcut::{Code, Modifiers};
 
     #[test]
-    fn official_defaults_are_distinct_f7_f8_f9() {
+    fn official_defaults_keep_f7_f8_f9_and_disable_new_bindings() {
         let config = Config::default();
         config.validate().unwrap();
         assert_eq!(config.game_mode.shortcut().unwrap().unwrap().key, Code::F7);
@@ -264,6 +296,9 @@ mod tests {
             Code::F8
         );
         assert_eq!(config.toggle_pet.shortcut().unwrap().unwrap().key, Code::F9);
+        for (_, binding) in &config.entries()[3..] {
+            assert!(binding.shortcut().unwrap().is_none());
+        }
     }
 
     #[test]
@@ -299,8 +334,9 @@ mod tests {
             key: 0,
         };
         let mut config = Config::default();
-        config.toggle_pet = config.game_mode;
+        config.always_on_top = config.game_mode;
         assert_eq!(config.validate().unwrap_err(), "duplicate");
+        config.always_on_top = disabled;
         config.toggle_pet = disabled;
         config.game_mode = disabled;
         config.validate().unwrap();
@@ -336,7 +372,28 @@ mod tests {
         let json = serde_json::to_value(&config).unwrap();
         assert_eq!(json["gameMode"]["key"], 118);
         assert_eq!(json["switchScreen"]["key"], 119);
+        assert_eq!(json["alwaysOnTop"]["key"], 0);
+        assert_eq!(json["autoGameModeOnFullscreen"]["key"], 0);
+        assert_eq!(json["disablePointerMonitoring"]["key"], 0);
         assert_eq!(serde_json::from_value::<Config>(json).unwrap(), config);
         assert!(serde_json::from_str::<Config>(r#"{"gameMode":{"key":118}}"#).is_err());
+    }
+
+    #[test]
+    fn existing_saved_shortcuts_load_with_new_actions_disabled() {
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "gameMode": { "modifiers": 8, "key": 65 },
+            "switchScreen": { "modifiers": 0, "key": 0 },
+            "togglePet": { "modifiers": 1, "key": 120 }
+        }))
+        .unwrap();
+        assert_eq!(
+            config.game_mode.shortcut().unwrap().unwrap().key,
+            Code::KeyA
+        );
+        assert!(config.switch_screen.shortcut().unwrap().is_none());
+        assert_eq!(config.toggle_pet.shortcut().unwrap().unwrap().key, Code::F9);
+        assert_eq!(&config.entries()[3..], &Config::default().entries()[3..]);
+        config.validate().unwrap();
     }
 }

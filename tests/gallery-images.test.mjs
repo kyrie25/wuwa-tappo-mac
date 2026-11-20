@@ -34,11 +34,11 @@ function panelHost(source, host) {
 }
 
 function imageResolver() {
-  const names = new Set(['resolveBagAppearanceImageUrl', 'toCatalogAssetType', 'resolveAppearanceAtlasUrl', 'getAppearanceAtlasById', 'atlasTypeToAssetType', 'withAssetUrlCacheBust', 'buildAssetUrl', 'isLocalRoleAssetsHost', 'resolveLocalRoleAssetUrl', 'bagAppearanceAssetPath', 'appearanceAssetPath', 'resolveAppearanceAssetFolder']);
+  const names = new Set(['resolveBagAppearanceImageUrl', 'toCatalogAssetType', 'resolveAppearanceAtlasUrl', 'getAppearanceAtlasById', 'atlasTypeToAssetType', 'buildAssetUrl', 'isLocalRoleAssetsHost', 'resolveLocalRoleAssetUrl', 'bagAppearanceAssetPath', 'appearanceAssetPath', 'resolveAppearanceAssetFolder']);
   const functions = nodes(main.source, node => node.type === 'FunctionDeclaration' && names.has(node.id.name));
   assert.equal(functions.length, names.size);
   const env = vm.createContext({
-    LOCAL_ROLE_ASSETS_HOST: '__local_role_assets__', ASSET_URL_CACHE_BUST: 'test', loadedAssetsHost: profile.assetsOrigin,
+    LOCAL_ROLE_ASSETS_HOST: '__local_role_assets__', loadedAssetsHost: profile.assetsOrigin,
     localRoleAssetUrlByPath: {}, APPEARANCE_ASSET_TYPE_FOLDER: { emote_atlas: 'emote_atlas' }, appearanceAtlasCatalog: { value: new Map([[42, { asset_type: 'emote_atlas', url: 'emote_atlas/catalog-image.png?v=1' }]]) },
   });
   vm.runInContext(functions.map(node => main.source.slice(node.start, node.end)).join('\n'), env);
@@ -54,7 +54,7 @@ test('signed-out local pet host reproduces missing Gallery images even with a lo
 test('signed-out Gallery uses the regional public catalog without changing the pet source', () => {
   const host = panelHost(prepared, '__local_role_assets__');
   assert.equal(host, profile.assetsOrigin);
-  assert.equal(imageResolver()(host), `${profile.assetsOrigin}/emote_atlas/catalog-image.png?v=1&t=test`);
+  assert.equal(imageResolver()(host), `${profile.assetsOrigin}/emote_atlas/catalog-image.png?v=1`);
   assert.equal(panelHost(prepared, ''), profile.assetsOrigin);
   assert.equal(panelHost(prepared, undefined), profile.assetsOrigin);
   assert.equal(panelHost(prepared, profile.assetsOrigin), profile.assetsOrigin);

@@ -1,3 +1,4 @@
+use crate::profile::Region;
 use serde_json::{json, Value};
 use std::{
     ffi::c_void,
@@ -6,8 +7,11 @@ use std::{
     path::Path,
     process::Command,
     ptr::NonNull,
-    sync::{Arc, Mutex, OnceLock},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, OnceLock,
+    },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt;
@@ -191,6 +195,7 @@ impl Drop for ReachabilityTarget {
 
 pub struct SystemMonitor {
     targets: Mutex<Vec<ReachabilityTarget>>,
+    diagnostics_collected: AtomicBool,
 }
 
 impl SystemMonitor {
@@ -289,7 +294,99 @@ pub fn start_network_monitor(app: AppHandle) -> Result<SystemMonitor, String> {
     }
     Ok(SystemMonitor {
         targets: Mutex::new(targets),
+        diagnostics_collected: AtomicBool::new(false),
     })
+}
+
+fn diagnostic_targets(region: Region, args: &Value) -> Result<([String; 2], &'static str), String> {
+    let (label, assets, pointer) = match region {
+        Region::Cn => (
+            "CN",
+            "https://mc-wuwatappo.kurogames-global.com",
+            "latest_host.json",
+        ),
+        Region::Global => (
+            "GLOBAL",
+            "https://wutheringwaves-wuwatappo.kurogames-global.com",
+            "latest-global_host.json",
+        ),
+    };
+    let api = format!("https://{}", region.api_host());
+    if args["region"].as_str() != Some(label)
+        || args["apiBase"].as_str() != Some(api.as_str())
+        || args["preRelease"].as_bool() != Some(false)
+    {
+        return Err("network diagnostics require the regional production endpoints".into());
+    }
+    let source = match &args["assetsHost"] {
+        Value::Null => "fixed_fallback",
+        Value::String(host) if host == assets || host.strip_suffix('/') == Some(assets) => {
+            "webview_activity_config"
+        }
+        _ => return Err("invalid diagnostic asset origin".into()),
+    };
+    Ok((
+        [
+            format!("{api}/api/common/activity-config"),
+            format!("{assets}/app/json-host/{pointer}"),
+        ],
+        source,
+    ))
+}
+
+fn run_network_diagnostics(app: &AppHandle, args: &Value) -> Result<Value, String> {
+    let (urls, source) = diagnostic_targets(Region::from_app(app), args)?;
+    let run_id = args["runId"]
+        .as_str()
+        .filter(|id| {
+            !id.is_empty()
+                && id.len() <= 64
+                && id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
+        .ok_or("invalid network diagnostic run ID")?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| error.to_string())?;
+    if app
+        .state::<SystemMonitor>()
+        .diagnostics_collected
+        .swap(true, Ordering::Relaxed)
+    {
+        return Ok(json!({ "status": "already_collected" }));
+    }
+    for (target, url) in ["api", "resources"].into_iter().zip(&urls) {
+        let start = Instant::now();
+        let (status, result) = match client.get(url).send() {
+            Ok(response) => {
+                let status = response.status();
+                (
+                    Some(status.as_u16()),
+                    if status.is_success() {
+                        "ok"
+                    } else {
+                        "http_error"
+                    },
+                )
+            }
+            Err(error) if error.is_timeout() => (None, "timeout"),
+            Err(error) if error.is_connect() => (None, "connection_failed"),
+            Err(_) => (None, "request_failed"),
+        };
+        let record = json!({
+            "run_id": run_id, "target": target, "source": "native_http", "url": url,
+            "http_status": status, "result": result, "elapsed_ms": start.elapsed().as_millis(),
+        });
+        write_message(
+            app,
+            if result == "ok" { "info" } else { "warn" },
+            &format!("[NETWORK] diagnostic_native_http {record}"),
+        )?;
+    }
+    Ok(json!({ "status": "complete", "resource_url": urls[1], "resource_source": source }))
 }
 
 fn output(program: &str, args: &[&str]) -> Result<String, String> {
@@ -526,6 +623,7 @@ pub fn dispatch(app: &AppHandle, command: &str, args: &Value) -> Option<Result<V
             system_version().map(|version| json!({ "os": "macOS", "osVersion": version }))
         }
         "get_boot_diagnostics" => Ok(boot_diagnostics(app)),
+        "run_network_diagnostics" => run_network_diagnostics(app, args),
         "write_app_log" => {
             let level = args.get("level").and_then(Value::as_str);
             let message = args.get("message").and_then(Value::as_str);
@@ -618,6 +716,59 @@ mod tests {
         assert_eq!(state.observe(1, false), Some(false));
         assert_eq!(state.observe(0, false), None);
         assert_eq!(state.observe(1, true), Some(true));
+    }
+
+    #[test]
+    fn diagnostics_use_only_fixed_regional_public_endpoints() {
+        for (region, label, assets, filename) in [
+            (
+                Region::Cn,
+                "CN",
+                "https://mc-wuwatappo.kurogames-global.com",
+                "latest_host.json",
+            ),
+            (
+                Region::Global,
+                "GLOBAL",
+                "https://wutheringwaves-wuwatappo.kurogames-global.com",
+                "latest-global_host.json",
+            ),
+        ] {
+            let api = format!("https://{}", region.api_host());
+            let mut args =
+                json!({ "region": label, "apiBase": api, "assetsHost": null, "preRelease": false });
+            let (targets, source) = diagnostic_targets(region, &args).unwrap();
+            assert_eq!(
+                targets,
+                [
+                    format!("{api}/api/common/activity-config"),
+                    format!("{assets}/app/json-host/{filename}")
+                ]
+            );
+            assert_eq!(source, "fixed_fallback");
+            args["assetsHost"] = json!(format!("{assets}/"));
+            assert_eq!(
+                diagnostic_targets(region, &args).unwrap(),
+                (targets, "webview_activity_config")
+            );
+            for host in [
+                format!("{assets}.example.com"),
+                format!("{assets}/?token=value"),
+                "http://127.0.0.1".to_owned(),
+            ] {
+                args["assetsHost"] = json!(host);
+                assert!(diagnostic_targets(region, &args).is_err());
+            }
+            args["assetsHost"] = Value::Null;
+            args["preRelease"] = json!(true);
+            assert!(diagnostic_targets(region, &args).is_err());
+            args["preRelease"] = json!(false);
+            args["apiBase"] = json!(format!("{api}/other"));
+            assert!(diagnostic_targets(region, &args).is_err());
+            args["apiBase"] = json!(api);
+            args["region"] = json!(if region == Region::Cn { "GLOBAL" } else { "CN" });
+            assert!(diagnostic_targets(region, &args).is_err());
+        }
     }
 
     #[test]
