@@ -3,11 +3,13 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
+import { Readable } from 'node:stream';
 import path from 'node:path';
 import test from 'node:test';
 import { assetsOrigin, compareUpstream, configUrl, discoverUpstream, fetchOfficial, officialAssetUrl, parseManifest, parseOptions, syncUpstream, validateLock, verifyInstaller } from '../scripts/sync-upstream.mjs';
 import { getRegionProfile } from '../scripts/regions.mjs';
+import { fetchCnCdnEdge } from '../scripts/cn-cdn.mjs';
 
 const url = `${assetsOrigin}/app/release/WuwaTappo-cn_1.0.0_x64-setup.exe`;
 const manifestUrl = `${assetsOrigin}/app/version-json/latest.json?t=1`;
@@ -117,6 +119,105 @@ test('exhausted transient failures identify the request stage, URL, attempt and 
     return true;
   });
   assert.equal(count, 3);
+});
+
+test('a CN transfer can recover on an alternate CDN edge after normal retries', async () => {
+  for (const input of [`${assetsOrigin}/app/json-host/latest_host.json`, manifestUrl, url]) {
+    const failure = Object.assign(new Error('connect timed out'), { code: 'UND_ERR_CONNECT_TIMEOUT' });
+    const signals = new Set();
+    let edgeAttempts = 0;
+    const result = await fetchOfficial(input, {
+      sleep: async () => {},
+      read: async response => Buffer.from(await response.arrayBuffer()),
+      fetcher: async (_, { signal }) => {
+        signals.add(signal);
+        throw new TypeError('fetch failed', { cause: failure });
+      },
+      edgeFetcher: async (target, options) => {
+        edgeAttempts += 1;
+        assert.equal(target, input);
+        assert.equal(options.redirect, 'error');
+        assert.ok(!signals.has(options.signal));
+        return new Response(bytes);
+      },
+    });
+    assert.equal(signals.size, 3);
+    assert.equal(edgeAttempts, 1);
+    assert.deepEqual(verifyInstaller(result, lock()), { size: bytes.length, sha256: lock().installer.sha256 });
+  }
+});
+
+test('alternate CDN routing is restricted to CN HTTPS transport failures', async () => {
+  const edgeFetcher = async () => assert.fail('alternate CDN routing is not allowed');
+  const networkError = Object.assign(new Error('unreachable'), { code: 'ECONNREFUSED' });
+  for (const input of [configUrl, `${getRegionProfile('global').assetsOrigin}/app/version.json`, manifestUrl.replace('https:', 'http:')]) {
+    await assert.rejects(fetchOfficial(input, {
+      fetcher: async () => { throw networkError; }, edgeFetcher, sleep: async () => {},
+    }), /ECONNREFUSED/);
+  }
+  for (const status of [301, 403, 503]) {
+    await assert.rejects(fetchOfficial(manifestUrl, {
+      fetcher: async () => new Response(null, { status }), edgeFetcher, sleep: async () => {},
+    }), new RegExp(`HTTP ${status}`));
+  }
+  const certificateError = Object.assign(new Error('expired certificate'), { code: 'CERT_HAS_EXPIRED' });
+  await assert.rejects(fetchOfficial(manifestUrl, {
+    fetcher: async () => { throw certificateError; }, edgeFetcher,
+  }), /CERT_HAS_EXPIRED/);
+  await assert.rejects(fetchOfficial(manifestUrl, {
+    fetcher: async () => new Response('invalid JSON'), edgeFetcher,
+  }), /JSON/);
+  assert.deepEqual(await fetchOfficial(manifestUrl, {
+    fetcher: async () => Response.json(manifest), edgeFetcher,
+  }), manifest);
+});
+
+test('an exhausted alternate request reports both the normal and alternate failures', async () => {
+  await assert.rejects(fetchOfficial(manifestUrl, {
+    fetcher: async () => { throw Object.assign(new Error('DNS lookup failed'), { code: 'ENOTFOUND' }); },
+    edgeFetcher: async () => new Response(null, { status: 302 }),
+  }), /ENOTFOUND.*alternate CN CDN: HTTP 302/);
+});
+
+test('alternate edges keep the official TLS hostname and cancel a stalled edge when another responds', async () => {
+  const hostname = new URL(assetsOrigin).hostname;
+  const signal = AbortSignal.timeout(5_000);
+  const resolvers = [];
+  const attempts = new Map();
+  const response = await fetchCnCdnEdge(manifestUrl, { signal }, {
+    fetchDns: async (endpoint, options) => {
+      assert.equal(endpoint.searchParams.get('name'), hostname);
+      assert.equal(endpoint.searchParams.get('type'), 'A');
+      assert.equal(options.redirect, 'error');
+      resolvers.push(endpoint.hostname);
+      return Response.json({ Status: 0, Answer: [
+        { type: 5, data: 'edge.example.test' }, { type: 28, data: '2001:db8::1' },
+        { type: 1, data: 'invalid' }, { type: 1, data: '192.0.2.1' }, { type: 1, data: '192.0.2.2' },
+      ] });
+    },
+    open: (target, options, callback) => {
+      assert.equal(target.href, manifestUrl);
+      assert.equal(options.servername, hostname);
+      assert.equal(options.rejectUnauthorized, true);
+      const request = new EventEmitter();
+      assert.ok(!options.signal.aborted);
+      options.lookup(hostname, { family: 4 }, (error, address, family) => {
+        assert.equal(error, null);
+        assert.equal(family, 4);
+        assert.ok(!attempts.has(address));
+        attempts.set(address, options.signal);
+        if (address === '192.0.2.2') queueMicrotask(() => {
+          callback(Object.assign(Readable.from([Buffer.from(JSON.stringify(manifest))]), { statusCode: 200 }));
+        });
+      });
+      return request;
+    },
+  });
+  assert.deepEqual(resolvers, ['dns.google', 'cloudflare-dns.com']);
+  assert.deepEqual([...attempts.keys()], ['192.0.2.1', '192.0.2.2']);
+  assert.equal(attempts.get('192.0.2.1').aborted, true);
+  assert.equal(attempts.get('192.0.2.2').aborted, false);
+  assert.deepEqual(await response.json(), manifest);
 });
 
 test('temporary HTTP failure retries but forbidden and redirect responses do not', async () => {

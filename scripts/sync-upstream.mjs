@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { getRegionProfile } from './regions.mjs';
+import { fetchCnCdnEdge, isCnCdnUrl } from './cn-cdn.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cn = getRegionProfile('cn');
@@ -65,6 +66,7 @@ export function compareUpstream(current, latest) {
 
 const retryableStatuses = new Set([408, 429, 500, 502, 503, 504]);
 const retryableCodes = new Set(['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ECONNREFUSED', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET']);
+const edgeFallbackCodes = new Set(['ENOTFOUND', 'EHOSTUNREACH', 'ENETUNREACH']);
 
 function errorDetails(error) {
   const details = [];
@@ -72,28 +74,45 @@ function errorDetails(error) {
   return details;
 }
 
-export async function fetchOfficial(url, { fetcher = fetch, read = response => response.json(), stage, timeout = 30_000, sleep = delay, request = {} } = {}) {
-  if (!['GET', 'HEAD', 'OPTIONS'].includes((request.method || 'GET').toUpperCase())) throw new Error('Automatic retries require a read-only request.');
+function describeRequestError(error) {
+  return errorDetails(error).map(cause => `${cause.message}${cause.code ? ` (${cause.code})` : ''}`).join(' → ') || String(error);
+}
+
+export async function fetchOfficial(url, { fetcher = fetch, edgeFetcher, read = response => response.json(), stage = 'Official resource request', timeout = 30_000, sleep = delay, request = {} } = {}) {
+  const method = (request.method || 'GET').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) throw new Error('Automatic retries require a read-only request.');
+  async function attemptRequest(send) {
+    const response = await send(url, { ...request, redirect: 'error', signal: AbortSignal.timeout(timeout) });
+    if (!response.ok) {
+      const error = new Error(`HTTP ${response.status}`);
+      error.status = response.status;
+      await response.body?.cancel();
+      throw error;
+    }
+    return read(response);
+  }
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      const response = await fetcher(url, { ...request, redirect: 'error', signal: AbortSignal.timeout(timeout) });
-      if (!response.ok) {
-        const error = new Error(`HTTP ${response.status}`);
-        error.status = response.status;
-        await response.body?.cancel();
-        throw error;
-      }
-      return await read(response);
+      return await attemptRequest(fetcher);
     } catch (error) {
       const causes = errorDetails(error);
-      const transient = retryableStatuses.has(error.status) || causes.some(cause => retryableCodes.has(cause.code) || cause.name === 'TimeoutError');
-      if (transient && attempt < 3) {
-        console.warn(`${stage || 'Official resource request'}: transient failure; retrying (${attempt + 1}/3).`);
+      const transportFailure = causes.some(cause => retryableCodes.has(cause.code) || cause.name === 'TimeoutError');
+      if ((transportFailure || retryableStatuses.has(error.status)) && attempt < 3) {
+        console.warn(`${stage}: transient failure; retrying (${attempt + 1}/3).`);
         await sleep(250 * 2 ** (attempt - 1));
         continue;
       }
-      const reason = causes.map(cause => `${cause.message}${cause.code ? ` (${cause.code})` : ''}`).join(' → ') || String(error);
-      throw new Error(`${stage || 'Official resource request'} failed: ${url}; attempt ${attempt}: ${reason}`, { cause: error });
+      const failure = `${stage} failed: ${url}; attempt ${attempt}: ${describeRequestError(error)}`;
+      if (edgeFetcher && method === 'GET' && isCnCdnUrl(url)
+        && (transportFailure || causes.some(cause => edgeFallbackCodes.has(cause.code)))) {
+        console.warn(`${stage}: trying alternate official CN CDN edges.`);
+        try {
+          return await attemptRequest(edgeFetcher);
+        } catch (edgeError) {
+          throw new Error(`${failure}; alternate CN CDN: ${describeRequestError(edgeError)}`, { cause: edgeError });
+        }
+      }
+      throw new Error(failure, { cause: error });
     }
   }
 }
@@ -103,9 +122,10 @@ export async function discoverUpstream(fetcher = fetch, profile = cn) {
   if (config.code !== 0 || typeof config.data?.assets_host !== 'string') throw new Error(`Invalid ${profile.region} activity configuration.`);
   const host = officialAssetUrl(config.data.assets_host, profile);
   if (new URL(host).pathname !== '/') throw new Error(`Invalid ${profile.region} asset root URL.`);
-  const pointer = await fetchOfficial(new URL(`/app/json-host/${profile.updaterHostFile}`, host).href, { fetcher, stage: `${profile.region} version pointer` });
+  const edgeFetcher = profile.id === 'cn' ? fetchCnCdnEdge : undefined;
+  const pointer = await fetchOfficial(new URL(`/app/json-host/${profile.updaterHostFile}`, host).href, { fetcher, edgeFetcher, stage: `${profile.region} version pointer` });
   const manifestUrl = officialAssetUrl(pointer.url, profile);
-  return parseManifest(await fetchOfficial(manifestUrl, { fetcher, stage: `${profile.region} version manifest` }), manifestUrl, profile);
+  return parseManifest(await fetchOfficial(manifestUrl, { fetcher, edgeFetcher, stage: `${profile.region} version manifest` }), manifestUrl, profile);
 }
 
 async function exists(filename) {
@@ -140,6 +160,7 @@ export async function downloadInstaller(lock, { profile = cn, updateLock = false
   else validateLock(lock, profile);
   const bytes = await fetchOfficial(lock.installer.url, {
     stage: `${profile.region} installer download`, timeout: 300_000, fetcher, sleep,
+    edgeFetcher: profile.id === 'cn' ? fetchCnCdnEdge : undefined,
     read: async response => Buffer.from(await response.arrayBuffer()),
   });
   if (lock.installer.sha256) verifyInstaller(bytes, lock, profile);
